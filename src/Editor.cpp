@@ -431,6 +431,26 @@ void Editor::DrawMenuBar()
 	{
 		if (ImGui::MenuItem("Shortcuts"))
 			show_help = true;
+		ImGui::Separator();
+		if (updater)
+		{
+			const bool unsupported = updater->GetState() == Updater::State::Unsupported;
+			if (ImGui::MenuItem("Check for updates", nullptr, false, !unsupported))
+			{
+				manual_check = true;
+				update_failure_shown = false;
+				updater->CheckNow();
+			}
+			bool autoupd = viewer->EditorSettings().value("auto_update", true);
+			if (ImGui::MenuItem("Update automatically", nullptr, &autoupd, !unsupported))
+			{
+				viewer->EditorSettings()["auto_update"] = autoupd;
+				viewer->SaveConfig();
+			}
+			ImGui::TextDisabled("Version %s", updater->Version().c_str());
+			if (unsupported)
+				ImGui::TextDisabled("%s", updater->Message().c_str());
+		}
 		ImGui::EndMenu();
 	}
 	ImGui::EndMainMenuBar();
@@ -558,6 +578,44 @@ void Editor::DrawToolbar()
 				viewer->CloseDocument(ui);
 			ImGui::SetItemTooltip("Close %s", FileName(ui).c_str());
 			ImGui::PopID();
+		}
+	}
+
+	// Update status
+	if (updater)
+	{
+		const auto st = updater->GetState();
+		if (st == Updater::State::Ready)
+		{
+			ImGui::SameLine();
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.45f, 0.22f, 1.f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.38f, 0.56f, 0.28f, 1.f));
+			if (ImGui::SmallButton(("Update " + updater->LatestVersion() + " ready - Restart").c_str()))
+				restart_requested = true;
+			ImGui::PopStyleColor(2);
+			ImGui::SetItemTooltip("The new version is in place. Restart now, or it opens next time you start the viewer.");
+		}
+		else if (st == Updater::State::Downloading)
+		{
+			ImGui::SameLine();
+			ImGui::TextColored(kDim, "Updating %d%%", (int)(updater->Progress() * 100));
+		}
+		else if (st == Updater::State::Checking && manual_check)
+		{
+			ImGui::SameLine();
+			ImGui::TextColored(kDim, "Checking for updates...");
+		}
+		else if (st == Updater::State::UpToDate && manual_check)
+		{
+			Rml::Log::Message(Rml::Log::LT_INFO, "ROSE UI Viewer %s is up to date.", updater->Version().c_str());
+			show_log = log_info = true;
+			manual_check = false;
+		}
+		else if (st == Updater::State::Failed && !update_failure_shown)
+		{
+			update_failure_shown = true;
+			Rml::Log::Message(manual_check ? Rml::Log::LT_WARNING : Rml::Log::LT_INFO, "%s", updater->Message().c_str());
+			manual_check = false;
 		}
 	}
 

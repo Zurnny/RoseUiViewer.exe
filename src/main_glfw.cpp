@@ -1,5 +1,6 @@
 // ROSE UI Viewer - preview and edit ROSE Online's RmlUi windows without starting the game.
 #include "Editor.h"
+#include "Updater.h"
 #include "RmlUi_Platform_GLFW.h"
 #include "Viewer.h"
 #include "ViewerRenderer.h"
@@ -200,6 +201,19 @@ int main(int argc, char** argv)
 		return 1;
 	g_context = viewer->GetContext();
 	editor->Init(viewer.get(), content_scale);
+
+	// Updates from GitHub (checked in the background)
+	auto updater = std::make_unique<Updater>();
+#ifdef _WIN32
+	{
+		wchar_t self[MAX_PATH];
+		GetModuleFileNameW(nullptr, self, MAX_PATH);
+		updater->Start(fs::path(self), ROSEVIEW_VERSION, viewer->EditorSettings().value("auto_update", true));
+	}
+#else
+	updater->Start(app_dir / "RoseUiViewer", ROSEVIEW_VERSION, false);
+#endif
+	editor->SetUpdater(updater.get());
 	SetupCallbacks(g_window);
 
 	// Command line: a game folder or .html files to open.
@@ -212,6 +226,8 @@ int main(int argc, char** argv)
 	while (true)
 	{
 		glfwWaitEventsTimeout(1.0 / 60.0);
+		if (editor->WantsRestart())
+			glfwSetWindowShouldClose(g_window, GLFW_TRUE);
 		if (glfwWindowShouldClose(g_window))
 		{
 			if (editor->ConfirmClose())
@@ -234,6 +250,7 @@ int main(int argc, char** argv)
 		glfwSwapBuffers(g_window);
 	}
 
+	const bool restart = editor->WantsRestart();
 	editor->Shutdown();
 	viewer->Shutdown();
 	ImGui_ImplOpenGL3_Shutdown();
@@ -246,5 +263,16 @@ int main(int argc, char** argv)
 	RmlGL3::Shutdown();
 	glfwDestroyWindow(g_window);
 	glfwTerminate();
+#ifdef _WIN32
+	if (restart)
+	{
+		wchar_t self[MAX_PATH];
+		GetModuleFileNameW(nullptr, self, MAX_PATH);
+		Updater::Relaunch(fs::path(self));
+	}
+#else
+	(void)restart;
+#endif
+	updater.reset();
 	return 0;
 }

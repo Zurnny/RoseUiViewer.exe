@@ -3,6 +3,7 @@
 // moving/resizing them, editing their styles, the window's code, and the sample data.
 #include "SourceEdit.h"
 #include "TextEditor.h"
+#include "Updater.h"
 #include "Viewer.h"
 #include <RmlUi/Core/ObserverPtr.h>
 #include <chrono>
@@ -29,6 +30,10 @@ public:
 
 	// Asked before the app closes; false = wait (a "save changes?" box is showing).
 	bool ConfirmClose();
+
+	// Updates: the app owns the updater; the editor shows its state and the Restart button.
+	void SetUpdater(Updater* u) { updater = u; }
+	bool WantsRestart() const { return restart_requested; }
 
 	// Testing hooks (headless tool)
 	bool SelectAt(float x, float y);
@@ -106,6 +111,10 @@ private:
 	std::string ActiveWindow() const;
 
 	Viewer* viewer = nullptr;
+	Updater* updater = nullptr;
+	bool restart_requested = false;
+	bool update_failure_shown = false;
+	bool manual_check = false;
 	float ui_scale = 1.f;
 	ImFont* font_ui = nullptr;
 	ImFont* font_mono = nullptr;

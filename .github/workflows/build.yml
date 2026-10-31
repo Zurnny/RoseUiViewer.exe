@@ -1,9 +1,10 @@
 name: Build
 
+# Every push to main builds RoseUiViewer.exe and publishes it as release v1.<build number>.
+# The viewer checks that release and updates itself.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -13,13 +14,15 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      VERSION: 1.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Configure
         shell: pwsh
         run: |
-          cmake -S . -B build -A x64 2>&1 | Tee-Object -FilePath configure.log
+          cmake -S . -B build -A x64 -DROSEVIEW_VERSION="$env:VERSION" 2>&1 | Tee-Object -FilePath configure.log
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build
@@ -50,6 +53,9 @@ jobs:
           Copy-Item README.md $out/README.md
           Copy-Item THIRD_PARTY_LICENSES.txt $out/
           Compress-Archive -Path "$out/*" -DestinationPath RoseUiViewer-windows.zip -Force
+          Copy-Item build/Release/RoseUiViewer.exe RoseUiViewer.exe
+          $hash = (Get-FileHash RoseUiViewer.exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path RoseUiViewer.exe.sha256 -Value "$hash  RoseUiViewer.exe" -NoNewline -Encoding ascii
 
       - uses: actions/upload-artifact@v4
         with:
@@ -57,7 +63,19 @@ jobs:
           path: RoseUiViewer-windows.zip
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          files: RoseUiViewer-windows.zip
+          tag_name: v${{ env.VERSION }}
+          name: ROSE UI Viewer ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            ${{ github.event.head_commit.message }}
+
+            **New install:** download RoseUiViewer-windows.zip, unzip it somewhere you can write to (Desktop or Documents), and run RoseUiViewer.exe.
+            Installed copies update themselves.
+          files: |
+            RoseUiViewer-windows.zip
+            RoseUiViewer.exe
+            RoseUiViewer.exe.sha256

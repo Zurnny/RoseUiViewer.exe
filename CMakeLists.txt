@@ -14,6 +14,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(ROSEVIEW_APP "Build the windowed viewer (GLFW)" ON)
 option(ROSEVIEW_HEADLESS "Build the headless screenshot tool (EGL, Linux only)" OFF)
 set(ROSEVIEW_EGL_INCLUDE "" CACHE PATH "Folder holding EGL/ and KHR/ headers (headless build)")
+set(ROSEVIEW_VERSION "dev" CACHE STRING "Version stamped into the build (the GitHub builds set 1.<build number>)")
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
@@ -117,11 +118,13 @@ add_library(viewer_core STATIC
 	src/SourceEdit.cpp
 	src/Editor.cpp
 	src/EditorLanguages.cpp
+	src/Updater.cpp
 )
 target_include_directories(viewer_core PUBLIC src ${RMLUI_BACKENDS} ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR})
 target_link_libraries(viewer_core PUBLIC RmlUi::RmlUi RmlUi::Debugger RmlUi::Lua Lua::Lua imgui_core)
+target_compile_definitions(viewer_core PUBLIC ROSEVIEW_VERSION="${ROSEVIEW_VERSION}")
 if(WIN32)
-	target_link_libraries(viewer_core PUBLIC opengl32)
+	target_link_libraries(viewer_core PUBLIC opengl32 winhttp)
 	target_compile_definitions(viewer_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
 else()
 	target_link_libraries(viewer_core PUBLIC dl)

@@ -53,6 +53,12 @@ The **Code** panel shows the window's file with syntax colouring. **Open a file 
 | **Ctrl + / Ctrl − / Ctrl 0** | Interface size (the game's dp scale) |
 | Background | Plain colours, green screen, or **Screenshot**: put an in-game screenshot named `background.png` (or `.jpg`) next to the .exe |
 
+## Updates
+
+The viewer keeps itself up to date. When it starts it checks the newest release on GitHub; if there's a newer one it downloads it in the background, checks its SHA-256 checksum, and puts it in place. A green **Update … ready - Restart** button appears on the toolbar: click it to switch now, or just carry on — the new version opens next time.
+
+**Help → Check for updates** checks straight away, **Help → Update automatically** turns it off, and the Help menu shows which version you have. The viewer needs to be in a folder it can write to (not Program Files) to update itself.
+
 ## Sample data (what the game would fill in)
 
 In-game, the client's C++ code supplies the values your windows show (name, HP, party members, inventory...). The viewer makes stand-in values instead:
@@ -71,6 +77,6 @@ In-game, the client's C++ code supplies the values your windows show (name, HP, 
 
 ## Building from source
 
-Windows builds are made by GitHub Actions (`.github/workflows/build.yml`): every push builds `RoseUiViewer-windows.zip` (under the run's *Artifacts*), and pushing a tag like `v1.0` also publishes it as a release.
+Windows builds are made by GitHub Actions (`.github/workflows/build.yml`): every push to `main` builds the viewer and publishes it as release `v1.<build number>` (the zip, plus `RoseUiViewer.exe` and its `.sha256` for the updater). Installed copies pick it up automatically.
 
-Locally: `cmake -S . -B build && cmake --build build --config Release` with Visual Studio 2022 and CMake 3.20+. Dependencies (RmlUi, Lua 5.4, FreeType, GLFW, Dear ImGui, nlohmann/json, stb) are downloaded automatically.
+Locally: `cmake -S . -B build && cmake --build build --config Release` with Visual Studio 2022 and CMake 3.20+. Local builds are stamped `dev` and don't update themselves. Dependencies (RmlUi, Lua 5.4, FreeType, GLFW, Dear ImGui, nlohmann/json, stb) are downloaded automatically.
