@@ -1,4 +1,6 @@
 #include "ImageDecode.h"
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -10,6 +12,9 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+
+#define BCDEC_IMPLEMENTATION
+#include "../third_party/bcdec/bcdec.h"
 
 namespace {
 
@@ -83,12 +88,19 @@ void DecodeAlphaBlock(const uint8_t* b, uint8_t out[16])
 		out[i] = a[(bits >> (3 * i)) & 7];
 }
 
-enum class Bc { None, BC1, BC2, BC3, BC4, BC5 };
+enum class Bc { None, BC1, BC2, BC3, BC4, BC5, BC6H, BC7 };
+
+float HalfToFloat(uint16_t h)
+{
+	const int e = (h >> 10) & 31, m = h & 1023;
+	float v = e == 0 ? m / 1024.f / 16384.f : e == 31 ? 65504.f : (1.f + m / 1024.f) * std::ldexp(1.f, e - 15);
+	return (h & 0x8000) ? -v : v;
+}
 
 bool DecodeBlocks(const uint8_t* data, size_t size, int w, int h, Bc fmt, DecodedImage& out, std::string& error)
 {
 	const int bw = (w + 3) / 4, bh = (h + 3) / 4;
-	const size_t block = (fmt == Bc::BC1 || fmt == Bc::BC4) ? 8 : 16;
+	const size_t block = (fmt == Bc::BC1 || fmt == Bc::BC4) ? 8 : 16; // BC2/3/5/6H/7 are 16 bytes
 	if (size < (size_t)bw * bh * block)
 	{
 		error = "DDS file is shorter than its size says";
@@ -128,6 +140,29 @@ bool DecodeBlocks(const uint8_t* data, size_t size, int w, int h, Bc fmt, Decode
 				DecodeAlphaBlock(b, r);
 				for (int i = 0; i < 16; i++)
 					px[i][0] = px[i][1] = px[i][2] = r[i], px[i][3] = 255;
+				break;
+			}
+			case Bc::BC7:
+			{
+				uint8_t tmp[16 * 4];
+				bcdec_bc7(b, tmp, 4 * 4);
+				for (int i = 0; i < 16; i++)
+					memcpy(px[i], tmp + i * 4, 4);
+				break;
+			}
+			case Bc::BC6H:
+			{
+				uint16_t tmp[16 * 3];
+				bcdec_bc6h_half(b, tmp, 4 * 3, 0);
+				for (int i = 0; i < 16; i++)
+				{
+					for (int c = 0; c < 3; c++)
+					{
+						float f = HalfToFloat(tmp[i * 3 + c]);
+						px[i][c] = (uint8_t)std::round(std::min(1.f, std::max(0.f, f)) * 255.f);
+					}
+					px[i][3] = 255;
+				}
 				break;
 			}
 			case Bc::BC5:
@@ -226,9 +261,11 @@ bool DecodeDDS(const std::string& bytes, DecodedImage& out, std::string& error)
 			case 76: case 77: case 78: fmt = Bc::BC3; break;
 			case 79: case 80: fmt = Bc::BC4; break;
 			case 82: case 83: fmt = Bc::BC5; break;
+			case 94: case 95: case 96: fmt = Bc::BC6H; break;
+			case 97: case 98: case 99: fmt = Bc::BC7; break;
 			case 27: case 28: case 29: dxgi_uncompressed = 1; break; // R8G8B8A8
 			case 87: case 90: case 91: dxgi_uncompressed = 2; break; // B8G8R8A8
-			default: error = "DDS format DXGI " + std::to_string(dxgi) + " isn't supported (try DXT5 or uncompressed)"; return false;
+			default: error = "DDS format DXGI " + std::to_string(dxgi) + " isn't supported (DXT1/3/5, BC4-BC7 and uncompressed are)"; return false;
 			}
 		}
 		else

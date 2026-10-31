@@ -75,6 +75,7 @@ In-game, the client's C++ code supplies the values your windows show (name, HP, 
 - **Data callbacks.** `data-event-click="enter_avatar(...)"` calls are logged, not carried out. Assignments in data events (`index = index + 1`) do work.
 - **Gauges** fill to `gvalue`/`gmax` with a child `<gauge-fill>` element, which may not match the game's own gauge drawing exactly.
 - **Live game state** such as real-time timers fed by the client.
+- **Packed images.** Pictures the game keeps inside its packed data files (not loose under `Data\ui`) can't be opened; they show as nothing, and the Log says which file.
 
 ## Building from source
 
