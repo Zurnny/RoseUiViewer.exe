@@ -23,6 +23,7 @@ struct DocScan {
 	std::map<std::string, ModelScan> models;
 	std::vector<std::string> templates; // hrefs of <link type="text/template">
 	std::vector<std::string> scripts;   // src of <script src="...">
+	std::vector<std::string> stylesheets; // hrefs of <link type="text/rcss">
 	std::string body_id;
 };
 

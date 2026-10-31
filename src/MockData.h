@@ -7,6 +7,9 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+#include <RmlUi/Core/DataModelHandle.h>
+#include <vector>
+
 namespace Rml {
 class Context;
 }
@@ -25,7 +28,14 @@ public:
 
 	fs::path FileFor(const std::string& model) const;
 
+	// Live access for the sample-data editor.
+	std::vector<std::string> Names() const;
+	nlohmann::json* Data(const std::string& model);
+	void Changed(const std::string& model);  // values edited: refresh the windows (no reload needed)
+	bool Save(const std::string& model);     // write mock/<model>.json
+
 private:
 	fs::path folder_;
 	std::map<std::string, std::unique_ptr<nlohmann::json>> data_;
+	std::map<std::string, Rml::DataModelHandle> handles_;
 };

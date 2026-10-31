@@ -5,6 +5,8 @@
 #include <RmlUi/Lua/Interpreter.h>
 #include <RmlUi/Lua/LuaType.h>
 #include <memory>
+#include <utility>
+#include <vector>
 
 namespace Rml {
 namespace Lua {
@@ -48,21 +50,32 @@ class GameDocument : public Rml::ElementDocument {
 public:
 	using Rml::ElementDocument::ElementDocument;
 
+	void RunPending()
+	{
+		auto list = std::move(pending);
+		pending.clear();
+		for (auto& [code, name] : list)
+			RunInDocument(this, code, name);
+	}
+
 protected:
 	void LoadInlineScript(const Rml::String& content, const Rml::String& source_path, int source_line) override
 	{
-		RunInDocument(this, content, "@" + source_path + ":" + std::to_string(source_line));
+		pending.push_back({content, "@" + source_path + ":" + std::to_string(source_line)});
 	}
 	void LoadExternalScript(const Rml::String& source_path) override
 	{
 		std::string code;
-		if (!GameFiles::ReadAll(GameFiles::Resolve(source_path), code))
+		if (!GameFiles::ReadCurrent(GameFiles::Resolve(source_path), code))
 		{
 			Rml::Log::Message(Rml::Log::LT_WARNING, "Script not found: %s", source_path.c_str());
 			return;
 		}
-		RunInDocument(this, code, "@" + source_path);
+		pending.push_back({code, "@" + source_path});
 	}
+
+private:
+	std::vector<std::pair<std::string, std::string>> pending;
 };
 
 class GameDocumentInstancer : public Rml::ElementInstancer {
@@ -113,4 +126,10 @@ void InstallGameScripting()
 	g_listener_instancer = std::make_unique<CommandListenerInstancer>();
 	Rml::Factory::RegisterElementInstancer("body", g_doc_instancer.get());
 	Rml::Factory::RegisterEventListenerInstancer(g_listener_instancer.get());
+}
+
+void RunDeferredScripts(Rml::ElementDocument* doc)
+{
+	if (auto* g = dynamic_cast<GameDocument*>(doc))
+		g->RunPending();
 }

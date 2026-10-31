@@ -1,9 +1,13 @@
-// ROSE UI Viewer - preview and live-edit ROSE Online's RmlUi windows without starting the game.
+// ROSE UI Viewer - preview and edit ROSE Online's RmlUi windows without starting the game.
+#include "Editor.h"
 #include "RmlUi_Platform_GLFW.h"
 #include "Viewer.h"
 #include "ViewerRenderer.h"
 #include <GLFW/glfw3.h>
 #include <RmlUi/Core.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 #include <memory>
 
 #ifdef _WIN32
@@ -14,6 +18,7 @@
 
 static GLFWwindow* g_window = nullptr;
 static Viewer* g_viewer = nullptr;
+static Editor* g_editor = nullptr;
 static ViewerRenderer* g_renderer = nullptr;
 static Rml::Context* g_context = nullptr;
 static int g_mods = 0;
@@ -61,50 +66,72 @@ static fs::path PickFolder()
 	return result;
 }
 
-static void OpenInExplorer(const fs::path& p) { ShellExecuteW(nullptr, L"open", p.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
+static void OpenInExplorer(const fs::path& p)
+{
+	std::error_code ec;
+	if (fs::is_regular_file(p, ec))
+	{
+		std::wstring arg = L"/select,\"" + p.wstring() + L"\"";
+		ShellExecuteW(nullptr, L"open", L"explorer.exe", arg.c_str(), nullptr, SW_SHOWNORMAL);
+	}
+	else
+		ShellExecuteW(nullptr, L"open", p.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
 #else
 static fs::path PickFolder() { return {}; }
 static void OpenInExplorer(const fs::path& p)
 {
-	std::string cmd = "xdg-open \"" + p.u8string() + "\" >/dev/null 2>&1 &";
+	std::string cmd = "xdg-open \"" + p.parent_path().u8string() + "\" >/dev/null 2>&1 &";
 	if (system(cmd.c_str())) {}
 }
 #endif
 
+// Input goes to the editor panels first (ImGui), then to the game windows unless the editor is using it.
 static void SetupCallbacks(GLFWwindow* window)
 {
-	glfwSetKeyCallback(window, [](GLFWwindow*, int key, int, int action, int mods) {
+	glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int sc, int action, int mods) {
+		ImGui_ImplGlfw_KeyCallback(w, key, sc, action, mods);
 		g_mods = mods;
+		if (g_editor->WantsKeyboard())
+			return;
 		if (action == GLFW_PRESS || action == GLFW_REPEAT)
 		{
-			if (g_viewer->OnKeyDown(RmlGLFW::ConvertKey(key), RmlGLFW::ConvertKeyModifiers(mods)))
+			// The editor handles its own shortcuts; the game windows get the rest.
+			if (key == GLFW_KEY_F5 || key == GLFW_KEY_F8)
 				return;
 		}
 		RmlGLFW::ProcessKeyCallback(g_context, key, action, mods);
 	});
-	glfwSetCharCallback(window, [](GLFWwindow*, unsigned int cp) { RmlGLFW::ProcessCharCallback(g_context, cp); });
-	glfwSetCursorEnterCallback(window, [](GLFWwindow*, int entered) { RmlGLFW::ProcessCursorEnterCallback(g_context, entered); });
+	glfwSetCharCallback(window, [](GLFWwindow* w, unsigned int cp) {
+		ImGui_ImplGlfw_CharCallback(w, cp);
+		if (!g_editor->WantsKeyboard())
+			RmlGLFW::ProcessCharCallback(g_context, cp);
+	});
+	glfwSetCursorEnterCallback(window, [](GLFWwindow* w, int entered) {
+		ImGui_ImplGlfw_CursorEnterCallback(w, entered);
+		RmlGLFW::ProcessCursorEnterCallback(g_context, entered);
+	});
 	glfwSetCursorPosCallback(window, [](GLFWwindow* w, double x, double y) {
-		// Viewer works in framebuffer pixels (same as the context).
-		int ww, wh, fw, fh;
-		glfwGetWindowSize(w, &ww, &wh);
-		glfwGetFramebufferSize(w, &fw, &fh);
-		const double sx = ww ? (double)fw / ww : 1.0, sy = wh ? (double)fh / wh : 1.0;
-		if (g_viewer->OnMouseMove((int)(x * sx), (int)(y * sy)))
-			return;
-		RmlGLFW::ProcessCursorPosCallback(g_context, w, x, y, g_mods);
+		ImGui_ImplGlfw_CursorPosCallback(w, x, y);
+		if (!g_editor->BlocksCanvasMouse())
+			RmlGLFW::ProcessCursorPosCallback(g_context, w, x, y, g_mods);
 	});
-	glfwSetMouseButtonCallback(window, [](GLFWwindow*, int button, int action, int mods) {
+	glfwSetMouseButtonCallback(window, [](GLFWwindow* w, int button, int action, int mods) {
+		ImGui_ImplGlfw_MouseButtonCallback(w, button, action, mods);
 		g_mods = mods;
-		if (g_viewer->OnMouseButton(button, action == GLFW_PRESS, RmlGLFW::ConvertKeyModifiers(mods)))
-			return;
-		RmlGLFW::ProcessMouseButtonCallback(g_context, button, action, mods);
+		// Releases always reach RmlUi so a press it got doesn't stay stuck.
+		if (!g_editor->BlocksCanvasMouse() || action == GLFW_RELEASE)
+			RmlGLFW::ProcessMouseButtonCallback(g_context, button, action, mods);
 	});
-	glfwSetScrollCallback(window, [](GLFWwindow*, double, double y) { RmlGLFW::ProcessScrollCallback(g_context, y, g_mods); });
+	glfwSetScrollCallback(window, [](GLFWwindow* w, double xo, double yo) {
+		ImGui_ImplGlfw_ScrollCallback(w, xo, yo);
+		if (!g_editor->BlocksCanvasMouse())
+			RmlGLFW::ProcessScrollCallback(g_context, yo, g_mods);
+	});
+	glfwSetWindowFocusCallback(window, [](GLFWwindow* w, int focused) { ImGui_ImplGlfw_WindowFocusCallback(w, focused); });
 	glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, int w, int h) {
 		g_renderer->SetViewport(w, h);
 		RmlGLFW::ProcessFramebufferSizeCallback(g_context, w, h);
-		g_viewer->OnResize({w, h});
 	});
 	glfwSetDropCallback(window, [](GLFWwindow*, int count, const char** paths) {
 		std::vector<fs::path> list;
@@ -128,6 +155,7 @@ int main(int argc, char** argv)
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 	glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+	glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 	g_window = glfwCreateWindow(1600, 900, "ROSE UI Viewer", nullptr, nullptr);
 	if (!g_window)
 	{
@@ -147,8 +175,10 @@ int main(int argc, char** argv)
 	auto renderer = std::make_unique<ViewerRenderer>();
 	auto platform = std::make_unique<SystemInterface_GLFW>(g_window);
 	auto viewer = std::make_unique<Viewer>();
+	auto editor = std::make_unique<Editor>();
 	g_renderer = renderer.get();
 	g_viewer = viewer.get();
+	g_editor = editor.get();
 
 	int fw, fh;
 	glfwGetFramebufferSize(g_window, &fw, &fh);
@@ -161,9 +191,15 @@ int main(int argc, char** argv)
 	hooks.open_in_explorer = OpenInExplorer;
 	hooks.set_title = [](const std::string& t) { glfwSetWindowTitle(g_window, t.c_str()); };
 
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGui_ImplGlfw_InitForOpenGL(g_window, false);
+	ImGui_ImplOpenGL3_Init("#version 330");
+
 	if (!viewer->Init(app_dir, renderer.get(), platform.get(), hooks, {fw, fh}, content_scale))
 		return 1;
 	g_context = viewer->GetContext();
+	editor->Init(viewer.get(), content_scale);
 	SetupCallbacks(g_window);
 
 	// Command line: a game folder or .html files to open.
@@ -173,18 +209,37 @@ int main(int argc, char** argv)
 	if (!args.empty())
 		viewer->OnDrop(args);
 
-	while (!glfwWindowShouldClose(g_window))
+	while (true)
 	{
-		glfwWaitEventsTimeout(1.0 / 30.0);
+		glfwWaitEventsTimeout(1.0 / 60.0);
+		if (glfwWindowShouldClose(g_window))
+		{
+			if (editor->ConfirmClose())
+				break;
+			glfwSetWindowShouldClose(g_window, GLFW_FALSE);
+		}
 		viewer->Update();
+
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+		editor->Frame();
+		ImGui::Render();
+
 		renderer->Clear();
 		renderer->BeginFrame();
 		viewer->Render();
 		renderer->EndFrame();
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 		glfwSwapBuffers(g_window);
 	}
 
+	editor->Shutdown();
 	viewer->Shutdown();
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+	editor.reset();
 	viewer.reset();
 	platform.reset();
 	renderer.reset();

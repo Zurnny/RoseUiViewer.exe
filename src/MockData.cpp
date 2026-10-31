@@ -359,8 +359,36 @@ void MockModels::Build(Rml::Context* context, const std::map<std::string, ModelS
 				return args.empty() ? Rml::Variant(Rml::String()) : args[0];
 			});
 		}
+		handles_[name] = ctor.GetModelHandle();
 		data_[name] = std::move(holder);
 	}
+}
+
+std::vector<std::string> MockModels::Names() const
+{
+	std::vector<std::string> v;
+	for (auto& [k, j] : data_)
+		v.push_back(k);
+	return v;
+}
+
+nlohmann::json* MockModels::Data(const std::string& model)
+{
+	auto it = data_.find(model);
+	return it == data_.end() ? nullptr : it->second.get();
+}
+
+void MockModels::Changed(const std::string& model)
+{
+	auto it = handles_.find(model);
+	if (it != handles_.end() && it->second)
+		it->second.DirtyAllVariables();
+}
+
+bool MockModels::Save(const std::string& model)
+{
+	auto* j = Data(model);
+	return j && GameFiles::WriteAll(FileFor(model), j->dump(2) + "\n");
 }
 
 void MockModels::RemoveAll(Rml::Context* context)
@@ -368,4 +396,5 @@ void MockModels::RemoveAll(Rml::Context* context)
 	for (auto& [name, j] : data_)
 		context->RemoveDataModel(name);
 	data_.clear();
+	handles_.clear();
 }

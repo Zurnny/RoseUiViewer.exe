@@ -1,10 +1,14 @@
 #include "GameFiles.h"
+#include "SourceEdit.h"
+#include <map>
+#include <mutex>
 #include <RmlUi/Core/Log.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <cstring>
 
 namespace GameFiles {
 
@@ -168,43 +172,128 @@ fs::path FindGameFolderAbove(const fs::path& file)
 	return {};
 }
 
+static std::map<std::string, std::string> g_overlays;
+static std::vector<fs::path> g_annotated;
+static std::map<std::string, int> g_annotated_index;
+
+std::string Key(const fs::path& real)
+{
+	std::error_code ec;
+	fs::path c = fs::weakly_canonical(real, ec);
+	std::string s = (ec ? real : c).generic_u8string();
+	return Lower(s);
+}
+
+void SetOverlay(const fs::path& real, const std::string& text) { g_overlays[Key(real)] = text; }
+void ClearOverlay(const fs::path& real) { g_overlays.erase(Key(real)); }
+bool HasOverlay(const fs::path& real) { return g_overlays.count(Key(real)) > 0; }
+
+bool ReadCurrent(const fs::path& real, std::string& out)
+{
+	auto it = g_overlays.find(Key(real));
+	if (it != g_overlays.end())
+	{
+		out = it->second;
+		return true;
+	}
+	return ReadAll(real, out);
+}
+
+void ClearAnnotated()
+{
+	g_annotated.clear();
+	g_annotated_index.clear();
+}
+
+int AddAnnotated(const fs::path& real)
+{
+	const std::string k = Key(real);
+	auto it = g_annotated_index.find(k);
+	if (it != g_annotated_index.end())
+		return it->second;
+	int idx = (int)g_annotated.size();
+	g_annotated.push_back(real);
+	g_annotated_index[k] = idx;
+	return idx;
+}
+
+fs::path AnnotatedFile(int index)
+{
+	if (index < 0 || index >= (int)g_annotated.size())
+		return {};
+	return g_annotated[index];
+}
+
+static int AnnotatedIndex(const fs::path& real)
+{
+	auto it = g_annotated_index.find(Key(real));
+	return it == g_annotated_index.end() ? -1 : it->second;
+}
+
+// Content as the UI should see it: overlay or disk, with source tags for annotated files.
+static bool ServeFile(const fs::path& real, std::string& out)
+{
+	if (!ReadCurrent(real, out))
+		return false;
+	int idx = AnnotatedIndex(real);
+	if (idx >= 0)
+		out = SourceEdit::Annotate(out, idx);
+	return true;
+}
+
+bool Serve(const fs::path& real, std::string& out) { return ServeFile(real, out); }
+
 } // namespace GameFiles
 
 // ---------------------------------------------------------------- file interface
 
+namespace {
+struct MemFile {
+	std::string data;
+	size_t pos = 0;
+};
+} // namespace
+
 Rml::FileHandle GameFileInterface::Open(const Rml::String& path)
 {
-	fs::path real = GameFiles::Resolve(path);
-#ifdef _WIN32
-	FILE* f = _wfopen(real.wstring().c_str(), L"rb");
-#else
-	FILE* f = fopen(real.string().c_str(), "rb");
-#endif
+	auto f = new MemFile();
+	if (!GameFiles::Serve(GameFiles::Resolve(path), f->data))
+	{
+		delete f;
+		return 0;
+	}
 	return (Rml::FileHandle)f;
 }
 
-void GameFileInterface::Close(Rml::FileHandle file) { fclose((FILE*)file); }
+void GameFileInterface::Close(Rml::FileHandle file) { delete (MemFile*)file; }
 
-size_t GameFileInterface::Read(void* buffer, size_t size, Rml::FileHandle file) { return fread(buffer, 1, size, (FILE*)file); }
-
-bool GameFileInterface::Seek(Rml::FileHandle file, long offset, int origin) { return fseek((FILE*)file, offset, origin) == 0; }
-
-size_t GameFileInterface::Tell(Rml::FileHandle file) { return (size_t)ftell((FILE*)file); }
-
-size_t GameFileInterface::Length(Rml::FileHandle file)
+size_t GameFileInterface::Read(void* buffer, size_t size, Rml::FileHandle file)
 {
-	FILE* f = (FILE*)file;
-	long cur = ftell(f);
-	fseek(f, 0, SEEK_END);
-	long len = ftell(f);
-	fseek(f, cur, SEEK_SET);
-	return (size_t)len;
+	auto f = (MemFile*)file;
+	size_t n = std::min(size, f->data.size() - f->pos);
+	memcpy(buffer, f->data.data() + f->pos, n);
+	f->pos += n;
+	return n;
 }
+
+bool GameFileInterface::Seek(Rml::FileHandle file, long offset, int origin)
+{
+	auto f = (MemFile*)file;
+	long base = origin == SEEK_SET ? 0 : origin == SEEK_CUR ? (long)f->pos : (long)f->data.size();
+	long p = base + offset;
+	if (p < 0 || p > (long)f->data.size())
+		return false;
+	f->pos = (size_t)p;
+	return true;
+}
+
+size_t GameFileInterface::Tell(Rml::FileHandle file) { return ((MemFile*)file)->pos; }
+
+size_t GameFileInterface::Length(Rml::FileHandle file) { return ((MemFile*)file)->data.size(); }
 
 bool GameFileInterface::LoadFile(const Rml::String& path, Rml::String& out_data)
 {
-	fs::path real = GameFiles::Resolve(path);
-	if (!GameFiles::ReadAll(real, out_data))
+	if (!GameFiles::Serve(GameFiles::Resolve(path), out_data))
 	{
 		Rml::Log::Message(Rml::Log::LT_WARNING, "File not found: %s", path.c_str());
 		return false;

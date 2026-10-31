@@ -31,6 +31,20 @@ fs::path FindGameFolderAbove(const fs::path& file);
 
 std::string Lower(std::string s);
 
+// Unsaved text from the code editor: used instead of the file on disk while it exists.
+void SetOverlay(const fs::path& real, const std::string& text);
+void ClearOverlay(const fs::path& real);
+bool HasOverlay(const fs::path& real);
+// Reads the overlay if there is one, otherwise the file.
+bool ReadCurrent(const fs::path& real, std::string& out);
+
+// Files whose tags get viewer-src="index:offset" when the UI loads them (the open windows and their templates).
+void ClearAnnotated();
+int AddAnnotated(const fs::path& real); // returns the file's index
+fs::path AnnotatedFile(int index);
+std::string Key(const fs::path& real);
+bool Serve(const fs::path& real, std::string& out); // what the UI loads (overlay + source tags)
+
 } // namespace GameFiles
 
 class GameFileInterface : public Rml::FileInterface {

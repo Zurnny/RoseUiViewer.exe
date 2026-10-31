@@ -268,6 +268,8 @@ private:
 			}
 			if (type == "text/template" && !href.empty())
 				result.templates.push_back(href);
+			else if ((type == "text/rcss" || type == "text/css") && !href.empty())
+				result.stylesheets.push_back(href);
 		}
 
 		Scope scope = stack.back();

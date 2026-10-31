@@ -68,6 +68,12 @@ if(NOT stb_POPULATED)
 	FetchContent_Populate(stb)
 endif()
 
+FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG docking GIT_SHALLOW TRUE)
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POPULATED)
+	FetchContent_Populate(imgui)
+endif()
+
 set(RMLUI_BACKENDS ${rmlui_SOURCE_DIR}/Backends)
 
 # The viewer's own toolbar font (Lato, SIL Open Font License), so it shows text before a game folder is chosen.
@@ -77,6 +83,22 @@ if(NOT EXISTS ${EMBED_DIR}/font_regular.cpp)
 	embed_file(${rmlui_SOURCE_DIR}/Samples/assets/LatoLatin-Regular.ttf ${EMBED_DIR}/font_regular.cpp g_font_regular)
 	embed_file(${rmlui_SOURCE_DIR}/Samples/assets/LatoLatin-Bold.ttf ${EMBED_DIR}/font_bold.cpp g_font_bold)
 endif()
+if(NOT EXISTS ${EMBED_DIR}/font_mono.cpp)
+	embed_file(${rmlui_SOURCE_DIR}/Samples/assets/RobotoMono-Regular.ttf ${EMBED_DIR}/font_mono.cpp g_font_mono)
+endif()
+
+# Dear ImGui (editor panels) + the code editor widget
+add_library(imgui_core STATIC
+	${imgui_SOURCE_DIR}/imgui.cpp
+	${imgui_SOURCE_DIR}/imgui_draw.cpp
+	${imgui_SOURCE_DIR}/imgui_tables.cpp
+	${imgui_SOURCE_DIR}/imgui_widgets.cpp
+	${imgui_SOURCE_DIR}/imgui_demo.cpp
+	${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
+	${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+	third_party/TextEditor/TextEditor.cpp
+)
+target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends third_party/TextEditor)
 
 # ---------------------------------------------------------------- viewer core
 add_library(viewer_core STATIC
@@ -91,9 +113,13 @@ add_library(viewer_core STATIC
 	${RMLUI_BACKENDS}/RmlUi_Renderer_GL3.cpp
 	${EMBED_DIR}/font_regular.cpp
 	${EMBED_DIR}/font_bold.cpp
+	${EMBED_DIR}/font_mono.cpp
+	src/SourceEdit.cpp
+	src/Editor.cpp
+	src/EditorLanguages.cpp
 )
 target_include_directories(viewer_core PUBLIC src ${RMLUI_BACKENDS} ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR})
-target_link_libraries(viewer_core PUBLIC RmlUi::RmlUi RmlUi::Debugger RmlUi::Lua Lua::Lua)
+target_link_libraries(viewer_core PUBLIC RmlUi::RmlUi RmlUi::Debugger RmlUi::Lua Lua::Lua imgui_core)
 if(WIN32)
 	target_link_libraries(viewer_core PUBLIC opengl32)
 	target_compile_definitions(viewer_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
@@ -111,7 +137,7 @@ if(ROSEVIEW_APP)
 	FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.5.1 GIT_SHALLOW TRUE)
 	FetchContent_MakeAvailable(glfw)
 
-	add_executable(RoseUiViewer WIN32 src/main_glfw.cpp ${RMLUI_BACKENDS}/RmlUi_Platform_GLFW.cpp)
+	add_executable(RoseUiViewer WIN32 src/main_glfw.cpp ${RMLUI_BACKENDS}/RmlUi_Platform_GLFW.cpp ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp)
 	target_compile_definitions(RoseUiViewer PRIVATE GLFW_INCLUDE_NONE)
 	target_link_libraries(RoseUiViewer PRIVATE viewer_core glfw)
 	if(WIN32)
