@@ -374,14 +374,81 @@ void Viewer::RememberPositions()
 		}
 }
 
+// Places a window by its left/top. Any right/bottom anchoring from its stylesheet is switched off in the
+// preview, or the window would stretch between left and right.
+static void PlaceDocument(Rml::ElementDocument* d, float x, float y)
+{
+	d->SetProperty(Rml::PropertyId::Left, Rml::Property(x, Rml::Unit::PX));
+	d->SetProperty(Rml::PropertyId::Top, Rml::Property(y, Rml::Unit::PX));
+	d->SetProperty("right", "auto");
+	d->SetProperty("bottom", "auto");
+}
+
 void Viewer::SetDocumentPosition(const std::string& ui_path, int x, int y)
 {
 	positions[ui_path] = {x, y};
 	if (auto* d = LoadedDocument(ui_path))
+		PlaceDocument(d, (float)x, (float)y);
+}
+
+// The area a window actually covers on screen: its own box plus anything inside that sticks out of it.
+static void VisibleBounds(Rml::Element* e, Rml::Vector2f& lo, Rml::Vector2f& hi, bool& any)
+{
+	if (!e->IsVisible() || e->GetTagName() == "#text")
+		return;
+	const Rml::Vector2f p = e->GetAbsoluteOffset(Rml::BoxArea::Border);
+	const Rml::Vector2f s = e->GetBox().GetSize(Rml::BoxArea::Border);
+	if (s.x > 0 && s.y > 0)
 	{
-		d->SetProperty(Rml::PropertyId::Left, Rml::Property((float)x, Rml::Unit::PX));
-		d->SetProperty(Rml::PropertyId::Top, Rml::Property((float)y, Rml::Unit::PX));
+		if (!any)
+		{
+			lo = p;
+			hi = p + s;
+			any = true;
+		}
+		lo.x = std::min(lo.x, p.x);
+		lo.y = std::min(lo.y, p.y);
+		hi.x = std::max(hi.x, p.x + s.x);
+		hi.y = std::max(hi.y, p.y + s.y);
 	}
+	for (int i = 0; i < e->GetNumChildren(); i++)
+		VisibleBounds(e->GetChild(i), lo, hi, any);
+}
+
+void Viewer::CenterDocument(const std::string& ui_path, float offset)
+{
+	Rml::ElementDocument* d = LoadedDocument(ui_path);
+	if (!d)
+		return;
+	// Start from a known place so right/bottom anchoring doesn't skew the measurement.
+	Rml::Vector2f cur = d->GetAbsoluteOffset(Rml::BoxArea::Margin);
+	PlaceDocument(d, cur.x, cur.y);
+	context->Update();
+	cur = d->GetAbsoluteOffset(Rml::BoxArea::Margin);
+	Rml::Vector2f lo, hi;
+	bool any = false;
+	VisibleBounds(d, lo, hi, any);
+	if (!any)
+	{
+		lo = cur;
+		hi = cur;
+	}
+	const Rml::Vector2f size = hi - lo;
+	// Centre in the free area; if it's bigger than the area, line its top-left up with the area's.
+	const float tx = view_pos.x + std::max(0.f, (view_size.x - size.x) * 0.5f) + offset;
+	const float ty = view_pos.y + std::max(0.f, (view_size.y - size.y) * 0.5f) + offset;
+	const float x = std::round(cur.x + (tx - lo.x));
+	const float y = std::round(cur.y + (ty - lo.y));
+	PlaceDocument(d, x, y);
+	positions[ui_path] = {(int)x, (int)y};
+}
+
+void Viewer::CenterAll()
+{
+	int n = 0;
+	for (const auto& ui : open_docs)
+		CenterDocument(ui, (n++) * 24.f);
+	SaveConfig();
 }
 
 void Viewer::ReloadAll()
@@ -487,20 +554,12 @@ void Viewer::ReloadAll()
 		RunDeferredScripts(doc);
 		auto pos = positions.find(ui);
 		if (pos != positions.end())
-		{
-			doc->SetProperty(Rml::PropertyId::Left, Rml::Property((float)pos->second.x, Rml::Unit::PX));
-			doc->SetProperty(Rml::PropertyId::Top, Rml::Property((float)pos->second.y, Rml::Unit::PX));
-		}
+			PlaceDocument(doc, (float)pos->second.x, (float)pos->second.y);
 		else
 		{
 			// First time: centre it in the free area (a little offset per window so they don't stack exactly).
 			context->Update();
-			Rml::Vector2f size = doc->GetBox().GetSize(Rml::BoxArea::Border);
-			float x = view_pos.x + std::max(0.f, (view_size.x - size.x) * 0.5f) + cascade * 24.f;
-			float y = view_pos.y + std::max(0.f, (view_size.y - size.y) * 0.5f) + cascade * 24.f;
-			doc->SetProperty(Rml::PropertyId::Left, Rml::Property(std::round(x), Rml::Unit::PX));
-			doc->SetProperty(Rml::PropertyId::Top, Rml::Property(std::round(y), Rml::Unit::PX));
-			positions[ui] = {(int)std::round(x), (int)std::round(y)};
+			CenterDocument(ui, cascade * 24.f);
 			cascade++;
 		}
 	}

@@ -99,6 +99,8 @@ public:
 	std::string PathOf(Rml::ElementDocument* doc) const; // "" for viewer documents
 	const WindowFiles* FilesOf(const std::string& ui_path) const;
 	void SetDocumentPosition(const std::string& ui_path, int x, int y);
+	void CenterDocument(const std::string& ui_path, float offset = 0); // centre what's visible of it in the free area
+	void CenterAll();
 	void BringToFront(Rml::ElementDocument* doc);
 
 	// Reloading

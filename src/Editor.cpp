@@ -417,6 +417,9 @@ void Editor::DrawMenuBar()
 		ImGui::MenuItem("Sample data", nullptr, &show_data);
 		ImGui::MenuItem("Log", nullptr, &show_log);
 		ImGui::Separator();
+		if (ImGui::MenuItem("Center all windows", nullptr, false, !viewer->OpenDocuments().empty()))
+			viewer->CenterAll();
+		ImGui::Separator();
 		if (ImGui::MenuItem("RmlUi inspector", "F8", Rml::Debugger::IsVisible()))
 			Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
 		if (ImGui::MenuItem("Reset panel layout"))
@@ -516,6 +519,15 @@ void Editor::DrawToolbar()
 		ImGui::Checkbox("Auto", &viewer->auto_reload);
 		ImGui::SetItemTooltip("Reload by itself when a file changes");
 		ImGui::SameLine();
+		ImGui::BeginDisabled(ActiveWindow().empty());
+		if (ImGui::Button("Center"))
+		{
+			viewer->CenterDocument(ActiveWindow());
+			viewer->SaveConfig();
+		}
+		ImGui::SetItemTooltip("Center %s in the preview.\nView > Center all windows does every open window.", FileName(ActiveWindow()).c_str());
+		ImGui::EndDisabled();
+		ImGui::SameLine();
 		ImGui::BeginDisabled(undo.empty());
 		if (ImGui::ArrowButton("##undo", ImGuiDir_Left))
 			Undo();
@@ -571,6 +583,20 @@ void Editor::DrawToolbar()
 				active_window = ui;
 				viewer->BringToFront(viewer->LoadedDocument(ui));
 			}
+			if (ImGui::BeginPopupContextItem("chip"))
+			{
+				if (ImGui::MenuItem("Center on screen"))
+				{
+					viewer->CenterDocument(ui);
+					viewer->SaveConfig();
+				}
+				if (ImGui::MenuItem("Bring to front"))
+					viewer->BringToFront(viewer->LoadedDocument(ui));
+				if (ImGui::MenuItem("Close"))
+					viewer->CloseDocument(ui);
+				ImGui::EndPopup();
+			}
+			ImGui::SetItemTooltip("Click: bring to front. Right-click: center, close.");
 			if (active)
 				ImGui::PopStyleColor();
 			ImGui::SameLine(0, 1);

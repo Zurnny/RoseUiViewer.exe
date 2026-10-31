@@ -11,7 +11,9 @@ It uses the same UI library the game does (RmlUi, with Lua), so layout, sprites,
 3. Click **Choose your ROSE Online folder** and pick the folder that has `Data` in it. You can also drag the folder, or any window's `.html` file, onto the viewer.
 4. Pick a window from **Open a window...** (e.g. `hud.html`). Open as many as you like.
 
-The screen has the preview in the middle and panels around it. Panels can be dragged, docked, tabbed or closed (**View** menu brings them back; **View → Reset panel layout** restores the default).
+The screen has the preview in the middle and panels around it. If a window opens off to one side, click **Center** on the toolbar (or right-click its tab → **Center on screen**, or **View → Center all windows**).
+
+Panels can be dragged, docked, tabbed or closed (**View** menu brings them back; **View → Reset panel layout** restores the default).
 
 ## Editing visually
 

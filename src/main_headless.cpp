@@ -28,7 +28,7 @@ int main(int argc, char** argv)
 	std::string game, app = ".", out = "shot.png", code, target, select_id, panel;
 	float drag[4] = {-1, -1, -1, -1};
 	int w = 1600, h = 900, frames = 20, frame_ms = 0;
-	bool use_editor = false;
+	bool use_editor = false, center = false;
 	float mouse_x = -1, mouse_y = -1;
 	std::vector<std::string> open;
 	std::vector<std::pair<int, int>> at;
@@ -85,6 +85,8 @@ int main(int argc, char** argv)
 			sscanf(next().c_str(), "%f,%f", &x, &y);
 			clicks.push_back({x, y});
 		}
+		else if (a == "--center")
+			center = true;
 		else if (a == "--panel")
 			panel = next();
 		else if (a == "--target")
@@ -204,6 +206,8 @@ int main(int argc, char** argv)
 					editor.SetTarget(target);
 				if (!panel.empty())
 					editor.FocusPanel(panel);
+				if (center)
+					viewer.CenterAll();
 				if (!select_id.empty())
 				{
 					const bool ok = editor.SelectId(select_id);
