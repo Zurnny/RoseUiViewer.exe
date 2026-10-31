@@ -29,6 +29,7 @@ int main(int argc, char** argv)
 	float drag[4] = {-1, -1, -1, -1};
 	int w = 1600, h = 900, frames = 20, frame_ms = 0;
 	bool use_editor = false, center = false;
+	float stack_x = -1, stack_y = -1, rclick_x = -1, rclick_y = -1;
 	float mouse_x = -1, mouse_y = -1;
 	std::vector<std::string> open;
 	std::vector<std::pair<int, int>> at;
@@ -84,6 +85,13 @@ int main(int argc, char** argv)
 			float x = 0, y = 0;
 			sscanf(next().c_str(), "%f,%f", &x, &y);
 			clicks.push_back({x, y});
+		}
+		else if (a == "--stack")
+			sscanf(next().c_str(), "%f,%f", &stack_x, &stack_y);
+		else if (a == "--rclick")
+		{
+			sscanf(next().c_str(), "%f,%f", &rclick_x, &rclick_y);
+			use_editor = true;
 		}
 		else if (a == "--center")
 			center = true;
@@ -208,11 +216,37 @@ int main(int argc, char** argv)
 					editor.FocusPanel(panel);
 				if (center)
 					viewer.CenterAll();
+				if (stack_x >= 0)
+				{
+					fprintf(stderr, "stack at %.0f,%.0f:\n", stack_x, stack_y);
+					for (auto& d : editor.DescribeStackAt(stack_x, stack_y))
+						fprintf(stderr, "   %s\n", d.c_str());
+					for (int k = 0; k < 4; k++)
+					{
+						editor.CycleAt(stack_x, stack_y);
+						fprintf(stderr, "alt+click %d -> %s\n", k + 1, editor.SelectedBox().c_str());
+					}
+				}
 				if (!select_id.empty())
 				{
 					const bool ok = editor.SelectId(select_id);
 					fprintf(stderr, "select #%s -> %s  box %s\n", select_id.c_str(), ok ? "ok" : "nothing", editor.SelectedBox().c_str());
 				}
+			}
+			if (rclick_x >= 0)
+			{
+				ImGuiIO& io = ImGui::GetIO();
+				if (f == 5)
+				{
+					editor.SetSelectMode(true);
+					io.AddMousePosEvent(rclick_x, rclick_y);
+				}
+				else if (f == 6)
+					io.AddMouseButtonEvent(1, true);
+				else if (f == 7)
+					io.AddMouseButtonEvent(1, false);
+				else if (f == 9)
+					io.AddMousePosEvent(rclick_x + 40, rclick_y + 60); // over an entry of the list
 			}
 			// Simulated mouse drag in select mode: frames 6..14
 			if (drag[0] >= 0)

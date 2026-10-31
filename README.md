@@ -20,7 +20,8 @@ Panels can be dragged, docked, tabbed or closed (**View** menu brings them back;
 1. Switch to **Select (V)** on the toolbar.
 2. Click an element in a window. It gets a brass outline with handles, and the **Elements** panel jumps to it.
 3. **Drag** it to move it, drag a **handle** to resize it, or use the **arrow keys** to nudge it (Shift = 10dp).
-4. In **Properties**, change anything: drag numbers, pick colours, choose from lists, or type values (Enter saves).
+4. **Something covered by something else?** Right-click to list *everything* under the mouse (top first, grouped by window) and pick it — hovering an entry outlines it. Or **Alt+click** to step down one layer at a time. **Ctrl+↑ / Ctrl+↓** jump to the parent / first child, and the **Elements** tree lets you click anything.
+5. In **Properties**, change anything: drag numbers, pick colours, choose from lists, or type values (Enter saves).
 
 Every change is written into the window's own `<style>` as a normal rule (in dp), e.g.
 `#mana { position: relative; left: 40dp; top: 25dp; }` — if a rule with that selector is already in the `<style>`, it's edited in place; otherwise it goes in a section marked `ROSE UI Viewer edits`.
@@ -46,6 +47,9 @@ The **Code** panel shows the window's file with syntax colouring. **Open a file 
 |---|---|
 | **V** | Switch between Interact (use the windows like in game) and Select (edit) |
 | **Esc** | Deselect |
+| **Right-click** (Select) | List everything under the mouse and pick any of it |
+| **Alt + click** (Select) | Pick the next element down at that spot (again to go deeper) |
+| **Ctrl + ↑ / ↓** | Select the parent / first child |
 | **Arrow keys** | Nudge the selected element (Shift = 10dp) |
 | **Alt + drag** | Move a whole window around the preview (in Interact) |
 | **Ctrl+S** | Save code |

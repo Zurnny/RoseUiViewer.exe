@@ -291,6 +291,25 @@ void Editor::Frame()
 			viewer->SetScale(viewer->Scale() - 0.25f);
 		if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_0, false))
 			viewer->SetScale(1.f);
+		if (selected && io.KeyCtrl)
+		{
+			if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+			{
+				Rml::Element* p = selected->GetParentNode();
+				if (p && IsGameElement(p))
+					Select(p);
+			}
+			if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+			{
+				Rml::Element* e = selected.get();
+				for (int i = 0; i < e->GetNumChildren(); i++)
+					if (e->GetChild(i)->GetTagName() != "#text")
+					{
+						Select(e->GetChild(i));
+						break;
+					}
+			}
+		}
 		if (select_mode && selected && !io.KeyCtrl)
 		{
 			const int step = io.KeyShift ? 10 : 1;
@@ -509,7 +528,7 @@ void Editor::DrawToolbar()
 		ImGui::SameLine();
 		if (ImGui::RadioButton("Select  (V)", select_mode))
 			select_mode = true;
-		ImGui::SetItemTooltip("Click an element to edit it. Drag it to move, drag the handles to resize.\nArrow keys nudge it (Shift = 10).");
+		ImGui::SetItemTooltip("Click an element to edit it. Drag it to move, drag the handles to resize.\nArrow keys nudge it (Shift = 10).\nRight-click lists everything under the mouse; Alt+click picks the one underneath.");
 		ImGui::SameLine();
 		ImGui::TextDisabled("|");
 		ImGui::SameLine();
@@ -773,6 +792,62 @@ Rml::Element* Editor::PickAt(float x, float y) const
 	return hit ? hit : doc;
 }
 
+static void StackIn(Rml::Element* e, float x, float y, std::vector<Rml::Element*>& out)
+{
+	if (!e->IsVisible() || e->GetTagName() == "#text")
+		return;
+	for (int i = e->GetNumChildren() - 1; i >= 0; i--)
+		StackIn(e->GetChild(i), x, y, out);
+	const Rml::Vector2f p = e->GetAbsoluteOffset(Rml::BoxArea::Border);
+	const Rml::Vector2f s = e->GetBox().GetSize(Rml::BoxArea::Border);
+	if (s.x > 0 && s.y > 0 && x >= p.x && y >= p.y && x < p.x + s.x && y < p.y + s.y)
+		out.push_back(e);
+}
+
+std::vector<Rml::Element*> Editor::StackAt(float x, float y) const
+{
+	// Windows top-most first (the one RmlUi says is on top, then the rest from the front of the list),
+	// and inside each window what's drawn on top first.
+	std::vector<Rml::Element*> out;
+	Rml::Context* ctx = viewer->GetContext();
+	std::vector<Rml::ElementDocument*> docs;
+	Rml::Element* top = ctx->GetElementAtPoint({x, y});
+	if (top && top->GetOwnerDocument() && !viewer->PathOf(top->GetOwnerDocument()).empty())
+		docs.push_back(top->GetOwnerDocument());
+	for (int i = ctx->GetNumDocuments() - 1; i >= 0; i--)
+	{
+		Rml::ElementDocument* d = ctx->GetDocument(i);
+		if (!viewer->PathOf(d).empty() && d->IsVisible() && std::find(docs.begin(), docs.end(), d) == docs.end())
+			docs.push_back(d);
+	}
+	for (auto* d : docs)
+		StackIn(d, x, y, out);
+	return out;
+}
+
+std::vector<std::string> Editor::DescribeStackAt(float x, float y) const
+{
+	std::vector<std::string> v;
+	for (auto* e : StackAt(x, y))
+		v.push_back(Describe(e));
+	return v;
+}
+
+bool Editor::CycleAt(float x, float y)
+{
+	auto stack = StackAt(x, y);
+	if (stack.empty())
+		return false;
+	int idx = -1;
+	for (int i = 0; i < (int)stack.size(); i++)
+		if (stack[i] == selected.get())
+			idx = i;
+	// Not in the stack yet: a plain click would give the top one, so start one below it.
+	int next = idx < 0 ? (stack.size() > 1 ? 1 : 0) : (idx + 1) % (int)stack.size();
+	Select(stack[next]);
+	return true;
+}
+
 void Editor::Select(Rml::Element* e)
 {
 	if (!e || !IsGameElement(e))
@@ -939,9 +1014,27 @@ void Editor::HandleCanvas()
 	}
 	if (drag == Drag::None)
 	{
+		if (stack_popup_open)
+			return; // the list sets 'hovered' itself
 		if (!over_canvas)
 		{
 			hovered.reset();
+			return;
+		}
+		// Right-click: list everything under the mouse.
+		if (ImGui::IsMouseClicked(1))
+		{
+			stack_items.clear();
+			for (auto* e : StackAt(mx, my))
+				stack_items.push_back(e->GetObserverPtr());
+			if (!stack_items.empty())
+				want_stack_popup = true;
+			return;
+		}
+		// Alt+click: the next element down at this spot.
+		if (io.KeyAlt && ImGui::IsMouseClicked(0))
+		{
+			CycleAt(mx, my);
 			return;
 		}
 		Rml::Element* hit = PickAt(mx, my);
@@ -2406,6 +2499,59 @@ void Editor::DrawPopups()
 		ImGui::EndPopup();
 	}
 
+	// Everything under the mouse
+	if (want_stack_popup)
+	{
+		ImGui::OpenPopup("##stack");
+		want_stack_popup = false;
+	}
+	stack_popup_open = false;
+	if (ImGui::BeginPopup("##stack"))
+	{
+		stack_popup_open = true;
+		ImGui::TextColored(kDim, "Under the mouse (top first)");
+		ImGui::Separator();
+		Rml::ElementDocument* last_doc = nullptr;
+		hovered.reset();
+		const float dp = viewer->DpRatio();
+		for (size_t i = 0; i < stack_items.size(); i++)
+		{
+			Rml::Element* e = stack_items[i].get();
+			if (!e)
+				continue;
+			if (e->GetOwnerDocument() != last_doc)
+			{
+				last_doc = e->GetOwnerDocument();
+				if (i > 0)
+					ImGui::Spacing();
+				ImGui::TextColored(kBrass, "%s", FileName(viewer->PathOf(last_doc)).c_str());
+			}
+			int depth = 0;
+			for (Rml::Element* p = e->GetParentNode(); p && p != last_doc; p = p->GetParentNode())
+				depth++;
+			const Rml::Vector2f sz = e->GetBox().GetSize(Rml::BoxArea::Border);
+			std::string label = Describe(e);
+			if (label.size() > 70)
+				label = label.substr(0, 67) + "...";
+			char size[48];
+			snprintf(size, sizeof(size), "%d x %d", (int)std::round(sz.x / dp), (int)std::round(sz.y / dp));
+			ImGui::PushID((int)i);
+			ImGui::Indent(depth * 8.f * ui_scale + 1);
+			if (ImGui::Selectable(label.c_str(), e == selected.get()))
+			{
+				Select(e);
+				select_mode = true;
+			}
+			if (ImGui::IsItemHovered())
+				hovered = e->GetObserverPtr();
+			ImGui::SameLine();
+			ImGui::TextColored(kDim, "%s", size);
+			ImGui::Unindent(depth * 8.f * ui_scale + 1);
+			ImGui::PopID();
+		}
+		ImGui::EndPopup();
+	}
+
 	if (show_help)
 	{
 		ImGui::OpenPopup("Shortcuts");
@@ -2417,6 +2563,9 @@ void Editor::DrawPopups()
 			{"V", "Switch between Interact and Select"},
 			{"Click (Select)", "Pick an element"},
 			{"Drag (Select)", "Move it; drag the square handles to resize"},
+			{"Right-click (Select)", "List everything under the mouse, pick any of it"},
+			{"Alt + click (Select)", "Pick the next element down at that spot (click again to go deeper)"},
+			{"Ctrl + Up / Down", "Select the parent / first child"},
 			{"Arrow keys", "Nudge the selected element 1dp (Shift: 10dp)"},
 			{"Esc", "Deselect"},
 			{"Alt + drag (Interact)", "Move a whole window around the preview"},

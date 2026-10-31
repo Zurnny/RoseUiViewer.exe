@@ -43,6 +43,8 @@ public:
 	bool SelectId(const std::string& id);
 	void FocusPanel(const std::string& name) { focus_panel = name; }
 	std::string SelectedBox() const; // "x,y,w,h" in px
+	std::vector<std::string> DescribeStackAt(float x, float y) const;
+	bool CycleAt(float x, float y); // Alt+click
 	void OpenCodeFor(const std::string& ui_path);
 
 private:
@@ -78,6 +80,7 @@ private:
 	// Canvas (select mode, dragging)
 	void HandleCanvas();
 	Rml::Element* PickAt(float x, float y) const;
+	std::vector<Rml::Element*> StackAt(float x, float y) const; // everything under the point, top first
 	bool IsGameElement(Rml::Element* e) const;
 	void Select(Rml::Element* e);
 	void OnReloaded();
@@ -171,6 +174,10 @@ private:
 	std::string log_filter;
 
 	std::string focus_panel;
+
+	// Elements under the mouse (right-click list, Alt+click cycling)
+	std::vector<Rml::ObserverPtr<Rml::Element>> stack_items;
+	bool want_stack_popup = false, stack_popup_open = false;
 
 	// Closing
 	bool close_popup = false, close_allowed = false;
