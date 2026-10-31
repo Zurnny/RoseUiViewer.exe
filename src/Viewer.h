@@ -158,5 +158,6 @@ private:
 	std::chrono::steady_clock::time_point last_check, change_seen;
 	bool change_pending = false;
 	bool reload_requested = false;
+	fs::path pending_folder; // picked in the dialog; applied at the start of the next frame
 	std::string last_reload_time;
 };

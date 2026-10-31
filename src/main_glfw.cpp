@@ -11,10 +11,16 @@
 #include <imgui_impl_opengl3.h>
 #include <memory>
 
+#include <cstdio>
+#include <exception>
+#include <imgui_internal.h>
+
 #ifdef _WIN32
 	#include <windows.h>
 	#include <shellapi.h>
 	#include <shobjidl.h>
+	#define GLFW_EXPOSE_NATIVE_WIN32
+	#include <GLFW/glfw3native.h>
 #endif
 
 static GLFWwindow* g_window = nullptr;
@@ -48,7 +54,7 @@ static fs::path PickFolder()
 		dlg->GetOptions(&opts);
 		dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
 		dlg->SetTitle(L"Pick your ROSE Online folder (the one with Data in it)");
-		if (SUCCEEDED(dlg->Show(nullptr)))
+		if (SUCCEEDED(dlg->Show(g_window ? glfwGetWin32Window(g_window) : nullptr)))
 		{
 			IShellItem* item = nullptr;
 			if (SUCCEEDED(dlg->GetResult(&item)))
@@ -86,6 +92,76 @@ static void OpenInExplorer(const fs::path& p)
 	if (system(cmd.c_str())) {}
 }
 #endif
+
+// ---------------------------------------------------------------- crash reports
+// If the viewer ever closes unexpectedly it leaves crash.txt next to the exe; the next start shows it in the Log.
+static fs::path g_crash_file;
+
+static void WriteCrash(const std::string& what)
+{
+	if (g_crash_file.empty())
+		return;
+#ifdef _WIN32
+	FILE* f = _wfopen(g_crash_file.wstring().c_str(), L"w");
+#else
+	FILE* f = fopen(g_crash_file.string().c_str(), "w");
+#endif
+	if (!f)
+		return;
+	fprintf(f, "ROSE UI Viewer %s closed unexpectedly: %s\n", ROSEVIEW_VERSION, what.c_str());
+	fclose(f);
+}
+
+#ifdef _WIN32
+static LONG WINAPI OnCrash(EXCEPTION_POINTERS* info)
+{
+	char buf[256];
+	HMODULE mod = nullptr;
+	void* addr = info->ExceptionRecord->ExceptionAddress;
+	GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)addr, &mod);
+	snprintf(buf, sizeof(buf), "error 0x%08lX at offset 0x%llX", (unsigned long)info->ExceptionRecord->ExceptionCode,
+		(unsigned long long)((char*)addr - (char*)mod));
+	WriteCrash(buf);
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+static void InstallCrashReports(const fs::path& app_dir)
+{
+	g_crash_file = app_dir / "crash.txt";
+	std::set_terminate([] {
+		std::string what = "unexpected error";
+		if (auto e = std::current_exception())
+		{
+			try
+			{
+				std::rethrow_exception(e);
+			} catch (const std::exception& ex)
+			{
+				what = ex.what();
+			} catch (...)
+			{
+			}
+		}
+		WriteCrash(what);
+		std::abort();
+	});
+#ifdef _WIN32
+	SetUnhandledExceptionFilter(OnCrash);
+#endif
+}
+
+static void ReportLastCrash(const fs::path& app_dir)
+{
+	std::string text;
+	if (!GameFiles::ReadAll(app_dir / "crash.txt", text))
+		return;
+	while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
+		text.pop_back();
+	Rml::Log::Message(Rml::Log::LT_ERROR, "Last time: %s. Please send this line along with what you were doing.", text.c_str());
+	std::error_code ec;
+	fs::rename(app_dir / "crash.txt", app_dir / "crash-last.txt", ec);
+}
 
 // Input goes to the editor panels first (ImGui), then to the game windows unless the editor is using it.
 static void SetupCallbacks(GLFWwindow* window)
@@ -138,7 +214,13 @@ static void SetupCallbacks(GLFWwindow* window)
 		std::vector<fs::path> list;
 		for (int i = 0; i < count; i++)
 			list.push_back(fs::u8path(paths[i]));
-		g_viewer->OnDrop(list);
+		try
+		{
+			g_viewer->OnDrop(list);
+		} catch (const std::exception& e)
+		{
+			Rml::Log::Message(Rml::Log::LT_ERROR, "Couldn't open what was dropped: %s", e.what());
+		}
 	});
 }
 
@@ -148,6 +230,7 @@ int main(int argc, char** argv)
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 #endif
 	const fs::path app_dir = AppFolder(argc > 0 ? argv[0] : "");
+	InstallCrashReports(app_dir);
 
 	if (!glfwInit())
 		return 1;
@@ -201,6 +284,7 @@ int main(int argc, char** argv)
 		return 1;
 	g_context = viewer->GetContext();
 	editor->Init(viewer.get(), content_scale);
+	ReportLastCrash(app_dir);
 
 	// Updates from GitHub (checked in the background)
 	auto updater = std::make_unique<Updater>();
@@ -234,12 +318,28 @@ int main(int argc, char** argv)
 				break;
 			glfwSetWindowShouldClose(g_window, GLFW_FALSE);
 		}
-		viewer->Update();
+		// An error in one frame is logged; the viewer keeps running instead of closing.
+		try
+		{
+			viewer->Update();
+		} catch (const std::exception& e)
+		{
+			Rml::Log::Message(Rml::Log::LT_ERROR, "Something went wrong: %s", e.what());
+		}
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-		editor->Frame();
+		ImGuiErrorRecoveryState imgui_state;
+		ImGui::ErrorRecoveryStoreState(&imgui_state);
+		try
+		{
+			editor->Frame();
+		} catch (const std::exception& e)
+		{
+			ImGui::ErrorRecoveryTryToRecoverState(&imgui_state);
+			Rml::Log::Message(Rml::Log::LT_ERROR, "Something went wrong: %s", e.what());
+		}
 		ImGui::Render();
 
 		renderer->Clear();

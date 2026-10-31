@@ -81,7 +81,7 @@ static fs::path ResolveNoCase(const fs::path& base, const std::vector<std::strin
 		const std::string want = Lower(part);
 		for (fs::directory_iterator it(cur, ec), end; !ec && it != end; it.increment(ec))
 		{
-			if (Lower(it->path().filename().string()) == want)
+			if (Lower(it->path().filename().u8string()) == want)
 			{
 				cur = it->path();
 				found = true;

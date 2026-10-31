@@ -29,6 +29,7 @@ int main(int argc, char** argv)
 	float drag[4] = {-1, -1, -1, -1};
 	int w = 1600, h = 900, frames = 20, frame_ms = 0;
 	bool use_editor = false, center = false;
+	std::string switch_to;
 	float stack_x = -1, stack_y = -1, rclick_x = -1, rclick_y = -1;
 	float mouse_x = -1, mouse_y = -1;
 	std::vector<std::string> open;
@@ -93,6 +94,8 @@ int main(int argc, char** argv)
 			sscanf(next().c_str(), "%f,%f", &rclick_x, &rclick_y);
 			use_editor = true;
 		}
+		else if (a == "--switch")
+			switch_to = next();
 		else if (a == "--center")
 			center = true;
 		else if (a == "--panel")
@@ -216,6 +219,8 @@ int main(int argc, char** argv)
 					editor.FocusPanel(panel);
 				if (center)
 					viewer.CenterAll();
+				if (!switch_to.empty())
+					fprintf(stderr, "switch -> %s\n", viewer.SetGameFolder(fs::u8path(switch_to)) ? "ok" : "failed");
 				if (stack_x >= 0)
 				{
 					fprintf(stderr, "stack at %.0f,%.0f:\n", stack_x, stack_y);

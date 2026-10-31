@@ -238,9 +238,18 @@ void Viewer::LoadFonts()
 		}
 		if (!it->is_regular_file(ec))
 			continue;
-		const std::string ext = GameFiles::Lower(it->path().extension().string());
-		if ((ext == ".ttf" || ext == ".otf") && Rml::LoadFontFace(it->path().u8string(), count == 0))
-			count++;
+		const std::string ext = GameFiles::Lower(it->path().extension().u8string());
+		if (ext == ".ttf" || ext == ".otf")
+		{
+			try
+			{
+				if (Rml::LoadFontFace(it->path().u8string(), count == 0))
+					count++;
+			} catch (const std::exception& e)
+			{
+				Rml::Log::Message(Rml::Log::LT_WARNING, "Skipped a font that couldn't be read: %s", e.what());
+			}
+		}
 	}
 	Rml::Log::Message(Rml::Log::LT_INFO, "Loaded %d font files from the game folder", count);
 }
@@ -254,19 +263,42 @@ bool Viewer::SetGameFolder(const fs::path& folder)
 		Rml::Log::Message(Rml::Log::LT_WARNING, "%s doesn't look like a ROSE Online folder (no Data\\ui\\themes in it)", folder.u8string().c_str());
 		return false;
 	}
-	const bool changed = folder != GameFiles::Root();
-	GameFiles::SetRoot(folder);
-	std::error_code ec;
-	fs::current_path(folder, ec);
-	if (changed)
+	const fs::path previous = GameFiles::Root();
+	const std::vector<std::string> previous_docs = open_docs;
+	try
 	{
-		LoadFonts();
-		open_docs.clear();
+		const bool changed = GameFiles::Key(folder) != GameFiles::Key(previous);
+		GameFiles::SetRoot(folder);
+		std::error_code ec;
+		fs::current_path(folder, ec);
+		if (changed)
+		{
+			LoadFonts();
+			open_docs.clear();
+		}
+		doc_list_dirty = true;
+		SaveConfig();
+		ReloadAll();
+		Rml::Log::Message(Rml::Log::LT_INFO, "Game folder: %s", folder.u8string().c_str());
+		return true;
+	} catch (const std::exception& e)
+	{
+		// Go back to the folder that worked.
+		Rml::Log::Message(Rml::Log::LT_ERROR, "Couldn't switch to %s: %s", folder.u8string().c_str(), e.what());
+		GameFiles::SetRoot(previous);
+		std::error_code ec;
+		fs::current_path(previous, ec);
+		open_docs = previous_docs;
+		doc_list_dirty = true;
+		try
+		{
+			SaveConfig();
+			ReloadAll();
+		} catch (...)
+		{
+		}
+		return false;
 	}
-	doc_list_dirty = true;
-	SaveConfig();
-	ReloadAll();
-	return true;
 }
 
 void Viewer::PickGameFolder()
@@ -280,7 +312,7 @@ void Viewer::PickGameFolder()
 	if (game.empty())
 		Rml::Log::Message(Rml::Log::LT_WARNING, "That folder has no Data\\ui\\themes in it. Pick the ROSE Online folder itself.");
 	else
-		SetGameFolder(game);
+		pending_folder = game; // switched at the start of the next frame, outside the editor's drawing
 }
 
 // ---------------------------------------------------------------- documents
@@ -299,7 +331,7 @@ const std::vector<std::string>& Viewer::ListGameDocuments()
 	{
 		if (!it->is_regular_file(ec))
 			continue;
-		const std::string ext = GameFiles::Lower(it->path().extension().string());
+		const std::string ext = GameFiles::Lower(it->path().extension().u8string());
 		if (ext != ".html" && ext != ".rml")
 			continue;
 		std::string ui = GameFiles::ToUiPath(it->path());
@@ -668,7 +700,7 @@ uint64_t Viewer::Fingerprint() const
 			auto t = fs::last_write_time(it->path(), ec);
 			mix((uint64_t)t.time_since_epoch().count());
 			mix((uint64_t)it->file_size(ec));
-			for (char c : it->path().filename().string())
+			for (char c : it->path().filename().u8string())
 				mix((uint64_t)(unsigned char)c);
 		}
 	};
@@ -688,6 +720,12 @@ void Viewer::Update()
 {
 	using namespace std::chrono;
 	const auto now = steady_clock::now();
+	if (!pending_folder.empty())
+	{
+		fs::path f = std::move(pending_folder);
+		pending_folder.clear();
+		SetGameFolder(f);
+	}
 	if (reload_requested)
 		ReloadAll();
 	if (auto_reload && now - last_check > milliseconds(600))
@@ -741,7 +779,7 @@ void Viewer::OnDrop(const std::vector<fs::path>& paths)
 				SetGameFolder(game);
 			continue;
 		}
-		const std::string ext = GameFiles::Lower(p.extension().string());
+		const std::string ext = GameFiles::Lower(p.extension().u8string());
 		if (ext != ".html" && ext != ".rml")
 			continue;
 		fs::path game = GameFiles::FindGameFolderAbove(p.parent_path());
