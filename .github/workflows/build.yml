@@ -7,6 +7,15 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Build this tag or commit instead (for crash lookups; nothing is published)"
+        required: false
+        default: ""
+      version:
+        description: "Version to stamp (e.g. 1.10) when rebuilding an old one"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -15,9 +24,13 @@ jobs:
   windows:
     runs-on: windows-latest
     env:
-      VERSION: 1.${{ github.run_number }}
+      VERSION: ${{ inputs.version != '' && inputs.version || format('1.{0}', github.run_number) }}
+      # A map file (function addresses) is made alongside the exe; it doesn't change the program.
+      LDFLAGS: /MAP
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
 
       - name: Configure
         shell: pwsh
@@ -54,16 +67,21 @@ jobs:
           Copy-Item THIRD_PARTY_LICENSES.txt $out/
           Compress-Archive -Path "$out/*" -DestinationPath RoseUiViewer-windows.zip -Force
           Copy-Item build/Release/RoseUiViewer.exe RoseUiViewer.exe
+          $map = Get-ChildItem build -Recurse -Filter RoseUiViewer.map | Select-Object -First 1
+          if ($map) { Copy-Item $map.FullName RoseUiViewer.map }
           $hash = (Get-FileHash RoseUiViewer.exe -Algorithm SHA256).Hash.ToLower()
           Set-Content -Path RoseUiViewer.exe.sha256 -Value "$hash  RoseUiViewer.exe" -NoNewline -Encoding ascii
 
       - uses: actions/upload-artifact@v4
         with:
           name: RoseUiViewer-windows
-          path: RoseUiViewer-windows.zip
+          path: |
+            RoseUiViewer-windows.zip
+            RoseUiViewer.exe
+            RoseUiViewer.map
 
       - name: Publish release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[no release]')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
@@ -79,3 +97,4 @@ jobs:
             RoseUiViewer-windows.zip
             RoseUiViewer.exe
             RoseUiViewer.exe.sha256
+            RoseUiViewer.map
