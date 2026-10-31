@@ -451,6 +451,9 @@ private:
 				continue;
 
 			VarHint hint = context;
+			std::string literal;
+			if (after_cmp_op && toks[start - 2].t == T::Number) // 0 == mode
+				literal = toks[start - 2].s;
 			if (!path.empty() && path.back() == "size" && path.size() > 1)
 			{
 				path.pop_back();
@@ -468,7 +471,13 @@ private:
 				if (IsComparison(op) && p + 1 < toks.size())
 				{
 					if (toks[p + 1].t == T::Number || (toks[p + 1].t == T::Op && toks[p + 1].s == "-"))
+					{
 						hint = VarHint::Number;
+						if (toks[p + 1].t == T::Number)
+							literal = toks[p + 1].s;
+						else if (p + 2 < toks.size() && toks[p + 2].t == T::Number)
+							literal = "-" + toks[p + 2].s;
+					}
 					else if (toks[p + 1].t == T::String)
 						hint = VarHint::String;
 					else
@@ -481,15 +490,15 @@ private:
 				else if (op == "=" && event)
 					hint = VarHint::None;
 			}
-			Record(scope.model, path, hint);
+			Record(scope.model, path, hint, literal);
 		}
 	}
 
-	void Record(const std::string& model, const std::vector<std::string>& path, VarHint hint)
+	void Record(const std::string& model, const std::vector<std::string>& path, VarHint hint, const std::string& literal = "")
 	{
 		if (model.empty() || path.empty())
 			return;
-		result.models[model].vars.push_back({path, hint});
+		result.models[model].vars.push_back({path, hint, literal});
 	}
 
 	void ScanText(const std::string& text)

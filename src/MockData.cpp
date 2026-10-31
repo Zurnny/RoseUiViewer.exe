@@ -181,7 +181,20 @@ json DefaultFor(const std::string& name, VarHint hint)
 	return name;
 }
 
-void Insert(json& node, const std::vector<std::string>& path, size_t i, VarHint hint)
+json FromLiteral(const std::string& lit)
+{
+	try
+	{
+		if (lit.find('.') != std::string::npos)
+			return std::stod(lit);
+		return std::stoll(lit);
+	} catch (...)
+	{
+		return 0;
+	}
+}
+
+void Insert(json& node, const std::vector<std::string>& path, size_t i, VarHint hint, const std::string& literal = "")
 {
 	if (i == path.size())
 	{
@@ -200,8 +213,10 @@ void Insert(json& node, const std::vector<std::string>& path, size_t i, VarHint 
 					name = path[k];
 					break;
 				}
-			node = DefaultFor(name, hint);
+			node = literal.empty() ? DefaultFor(name, hint) : FromLiteral(literal);
 		}
+		else if (!literal.empty() && node.is_boolean())
+			node = FromLiteral(literal); // compared with a number somewhere: it's a number
 		return;
 	}
 	const std::string& seg = path[i];
@@ -211,12 +226,12 @@ void Insert(json& node, const std::vector<std::string>& path, size_t i, VarHint 
 			node = json::array();
 		if (node.empty())
 			node.push_back(nullptr);
-		Insert(node[0], path, i + 1, hint);
+		Insert(node[0], path, i + 1, hint, literal);
 		return;
 	}
 	if (!node.is_object())
 		node = json::object();
-	Insert(node[seg], path, i + 1, hint);
+	Insert(node[seg], path, i + 1, hint, literal);
 }
 
 // Sample arrays get three entries; text in the copies is numbered so the rows look different.
@@ -264,6 +279,25 @@ void Finish(json& j)
 	}
 }
 
+void FixPlaceholder(json& node, const std::vector<std::string>& path, size_t i, const json& value)
+{
+	if (i == path.size())
+	{
+		if (node.is_number_integer() && node.get<int64_t>() == 42)
+			node = value;
+		return;
+	}
+	if (path[i] == "[]")
+	{
+		if (node.is_array())
+			for (auto& e : node)
+				FixPlaceholder(e, path, i + 1, value);
+		return;
+	}
+	if (node.is_object() && node.contains(path[i]))
+		FixPlaceholder(node[path[i]], path, i + 1, value);
+}
+
 // Adds what 'skel' has and 'user' lacks; never changes a value the user already has.
 void MergeMissing(json& user, const json& skel)
 {
@@ -299,6 +333,10 @@ void MockModels::Build(Rml::Context* context, const std::map<std::string, ModelS
 	for (const auto& [name, scan] : models)
 	{
 		json skel = json::object();
+		// Literal comparisons first, so 'mode == 0' decides mode's sample value before anything else does.
+		for (const auto& v : scan.vars)
+			if (!v.literal.empty())
+				Insert(skel, v.path, 0, v.hint, v.literal);
 		for (const auto& v : scan.vars)
 			Insert(skel, v.path, 0, v.hint);
 		Finish(skel);
@@ -324,6 +362,11 @@ void MockModels::Build(Rml::Context* context, const std::map<std::string, ModelS
 		}
 		const json before = user;
 		MergeMissing(user, skel);
+		// Older sample files used 42 for every number; where a window compares the value with
+		// specific numbers (mode == 0, bag == 1), 42 hides everything, so use the first one instead.
+		for (const auto& v : scan.vars)
+			if (!v.literal.empty())
+				FixPlaceholder(user, v.path, 0, FromLiteral(v.literal));
 		if (!had_file || (user != before && !text.empty()))
 			GameFiles::WriteAll(file, user.dump(2) + "\n");
 

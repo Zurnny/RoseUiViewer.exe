@@ -11,6 +11,7 @@ enum class VarHint { None, Bool, Number, String, Text, IsArray };
 struct VarUse {
 	std::vector<std::string> path; // "[]" marks "an element of this array"
 	VarHint hint = VarHint::None;
+	std::string literal; // a number it's compared with (mode == 0 -> "0"), used as its sample value
 };
 
 struct ModelScan {

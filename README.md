@@ -65,12 +65,13 @@ In-game, the client's C++ code supplies the values your windows show (name, HP, 
 
 - The **Sample data** panel lists every data model the open windows use. Tick boxes, drag numbers (percentages get a 0–100 slider), type text, and add/remove list entries with **+ / −**. The windows update instantly.
 - The values live in the `mock` folder next to the .exe (`mock\character.json`, `mock\party.json`...) and are saved as you change them.
-- The first time a window is opened, the viewer reads its markup and fills these files with every variable it uses (lists get three entries). Variables you add later are added without touching values you've changed.
+- The first time a window is opened, the viewer reads its markup and fills these files with every variable it uses (lists get three entries). A value the window compares with numbers (`data-if="mode == 0"`) starts at the first of them, so the section shows. Variables you add later are added without touching values you've changed.
+- Tab-style game commands like `onclick="mode:1"` or `onclick="bag:0"` set that value, so tabs switch like in-game.
 
 ## What it can't do
 
 - **Item icons.** `<item-slot>` icons come from the game's data files. A slot holding an item gets the class `viewer-has-item` instead, and you can show a specific sprite with `item-sprite="..."` while testing.
-- **Game commands.** `onclick="close"`, `onclick="select ..."` and the like are handled by the client. The viewer lists them in the Log panel when clicked; `close` hides the window.
+- **Game commands.** `onclick="close"`, `onclick="select ..."` and the like are handled by the client. The viewer lists them in the Log panel when clicked; `close` hides the window, and `name:value` commands (tabs) set that sample value.
 - **Data callbacks.** `data-event-click="enter_avatar(...)"` calls are logged, not carried out. Assignments in data events (`index = index + 1`) do work.
 - **Gauges** fill to `gvalue`/`gmax` with a child `<gauge-fill>` element, which may not match the game's own gauge drawing exactly.
 - **Live game state** such as real-time timers fed by the client.

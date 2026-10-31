@@ -12,3 +12,12 @@ class ElementDocument;
 // Runs a window's <script> code, in order, once the whole window has been built (as the game does),
 // so scripts can find their elements with GetElementById.
 void RunDeferredScripts(Rml::ElementDocument* doc);
+
+// Game commands of the form "name:value" (onclick="mode:1", "bag:0") set a data model value in the game.
+// The viewer passes them here; return true when handled.
+#include <functional>
+#include <string>
+namespace Rml {
+class Element;
+}
+void SetCommandHandler(std::function<bool(Rml::Element* element, const std::string& name, const std::string& value)> handler);

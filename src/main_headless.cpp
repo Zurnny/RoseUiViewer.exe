@@ -4,6 +4,7 @@
 //              [--open Data/ui/themes/rose/game/hud.html]... [--at x,y]...
 //              [--select x,y] [--style name=value]... [--code <ui path>] [--mouse x,y]
 #include "Editor.h"
+#include <RmlUi/Core/Context.h>
 #include "Viewer.h"
 #include "ViewerRenderer.h"
 #include <EGL/egl.h>
@@ -31,7 +32,7 @@ int main(int argc, char** argv)
 	float mouse_x = -1, mouse_y = -1;
 	std::vector<std::string> open;
 	std::vector<std::pair<int, int>> at;
-	std::vector<std::pair<float, float>> selects;
+	std::vector<std::pair<float, float>> selects, clicks;
 	std::vector<std::pair<std::string, std::string>> styles;
 	for (int i = 1; i < argc; i++)
 	{
@@ -77,6 +78,12 @@ int main(int argc, char** argv)
 		{
 			sscanf(next().c_str(), "%f,%f,%f,%f", &drag[0], &drag[1], &drag[2], &drag[3]);
 			use_editor = true;
+		}
+		else if (a == "--click")
+		{
+			float x = 0, y = 0;
+			sscanf(next().c_str(), "%f,%f", &x, &y);
+			clicks.push_back({x, y});
 		}
 		else if (a == "--panel")
 			panel = next();
@@ -224,6 +231,15 @@ int main(int argc, char** argv)
 				else if (f == 16)
 					fprintf(stderr, "after drag: box %s\n", editor.SelectedBox().c_str());
 			}
+			// Clicks straight into the game windows (Interact mode), one every two frames from frame 6
+			for (size_t c = 0; c < clicks.size(); c++)
+				if (f == 6 + (int)c * 2)
+				{
+					Rml::Context* ctx = viewer.GetContext();
+					ctx->ProcessMouseMove((int)clicks[c].first, (int)clicks[c].second, 0);
+					ctx->ProcessMouseButtonDown(0, 0);
+					ctx->ProcessMouseButtonUp(0, 0);
+				}
 			if (f == 5)
 				for (auto& [k, v] : styles)
 					fprintf(stderr, "style %s=%s -> %s\n", k.c_str(), v.c_str(), editor.CommitStyle(k, v) ? "saved" : "not saved");

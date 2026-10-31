@@ -93,6 +93,43 @@ bool Viewer::Init(const fs::path& app_dir_in, Rml::RenderInterface* renderer, Rm
 		return false;
 	Rml::Lua::Initialise();
 	InstallGameScripting();
+	SetCommandHandler([this](Rml::Element* el, const std::string& name, const std::string& value) {
+		// The model the element is in first, then any model with that variable.
+		std::vector<std::string> models;
+		for (Rml::Element* e = el; e; e = e->GetParentNode())
+		{
+			const Rml::String m = e->GetAttribute<Rml::String>("data-model", "");
+			if (!m.empty())
+			{
+				models.push_back(m);
+				break;
+			}
+		}
+		for (auto& n : mocks.Names())
+			models.push_back(n);
+		for (auto& m : models)
+		{
+			json* j = mocks.Data(m);
+			if (!j || !j->is_object() || !j->contains(name))
+				continue;
+			json& v = (*j)[name];
+			try
+			{
+				size_t used = 0;
+				long long n = std::stoll(value, &used);
+				if (used == value.size())
+					v = n;
+				else
+					v = std::stod(value);
+			} catch (...)
+			{
+				v = value == "true" ? json(true) : value == "false" ? json(false) : json(value);
+			}
+			mocks.Changed(m);
+			return true;
+		}
+		return false;
+	});
 	RegisterCustomElements();
 
 	Rml::LoadFontFace({(const Rml::byte*)g_font_regular, g_font_regular_size}, "Lato", Rml::Style::FontStyle::Normal, Rml::Style::FontWeight::Normal, true);

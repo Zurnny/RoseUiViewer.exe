@@ -4,6 +4,8 @@
 #include <RmlUi/Lua/IncludeLua.h>
 #include <RmlUi/Lua/Interpreter.h>
 #include <RmlUi/Lua/LuaType.h>
+#include <cctype>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -87,6 +89,18 @@ public:
 	void ReleaseElement(Rml::Element* element) override { delete element; }
 };
 
+std::function<bool(Rml::Element*, const std::string&, const std::string&)> g_command_handler;
+
+bool IsName(const std::string& s)
+{
+	if (s.empty() || !(std::isalpha((unsigned char)s[0]) || s[0] == '_'))
+		return false;
+	for (char c : s)
+		if (!(std::isalnum((unsigned char)c) || c == '_' || c == '-'))
+			return false;
+	return true;
+}
+
 // onclick="close", onclick="select 3", onchange="interface-size" ... are commands for the game's C++ code.
 class CommandListener : public Rml::EventListener {
 public:
@@ -100,6 +114,17 @@ public:
 		const Rml::String first = command.substr(0, command.find_first_of(" :"));
 		if (first == "ignore")
 			return;
+		// name:value sets a data model value (tabs like onclick="mode:1").
+		const size_t colon = command.find(':');
+		if (colon != Rml::String::npos && command.find(' ') == Rml::String::npos && g_command_handler)
+		{
+			const std::string name = command.substr(0, colon), value = command.substr(colon + 1);
+			if (IsName(name) && !value.empty() && g_command_handler(el, name, value))
+			{
+				Rml::Log::Message(Rml::Log::LT_INFO, "Game command %s: set %s = %s", command.c_str(), name.c_str(), value.c_str());
+				return;
+			}
+		}
 		Rml::Log::Message(Rml::Log::LT_INFO, "Game command (%s): %s  [%s]", event.GetType().c_str(), command.c_str(), where.c_str());
 		if (first == "close" && doc)
 			doc->Hide();
@@ -132,4 +157,9 @@ void RunDeferredScripts(Rml::ElementDocument* doc)
 {
 	if (auto* g = dynamic_cast<GameDocument*>(doc))
 		g->RunPending();
+}
+
+void SetCommandHandler(std::function<bool(Rml::Element*, const std::string&, const std::string&)> handler)
+{
+	g_command_handler = std::move(handler);
 }
