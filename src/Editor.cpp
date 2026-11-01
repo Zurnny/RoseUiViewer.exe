@@ -269,7 +269,7 @@ void Editor::Frame()
 	if (!io.WantTextInput)
 	{
 		if (ImGui::IsKeyPressed(ImGuiKey_F5, false))
-			viewer->ReloadAll();
+			viewer->RequestReload(); // reloads at the start of the next frame, not while panels are using the elements
 		if (ImGui::IsKeyPressed(ImGuiKey_F8, false))
 			Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
 		if (ImGui::IsKeyPressed(ImGuiKey_V, false) && !io.KeyCtrl)
@@ -406,7 +406,7 @@ void Editor::DrawMenuBar()
 				viewer->CloseDocument(ui);
 		ImGui::Separator();
 		if (ImGui::MenuItem("Reload", "F5"))
-			viewer->ReloadAll();
+			viewer->RequestReload(); // reloads at the start of the next frame, not while panels are using the elements
 		if (ImGui::MenuItem("Save code", "Ctrl+S", false, AnyDirty()))
 			SaveAllTabs();
 		ImGui::Separator();
@@ -533,7 +533,7 @@ void Editor::DrawToolbar()
 		ImGui::TextDisabled("|");
 		ImGui::SameLine();
 		if (ImGui::Button("Reload"))
-			viewer->ReloadAll();
+			viewer->RequestReload(); // reloads at the start of the next frame, not while panels are using the elements
 		ImGui::SameLine();
 		ImGui::Checkbox("Auto", &viewer->auto_reload);
 		ImGui::SetItemTooltip("Reload by itself when a file changes");
@@ -1381,7 +1381,7 @@ void Editor::WriteSource(const fs::path& real, const std::string& text, const st
 		}
 	}
 	Rml::Log::Message(Rml::Log::LT_INFO, "Saved %s in %s", label.c_str(), FileName(real.u8string()).c_str());
-	viewer->ReloadAll();
+	viewer->RequestReload(); // reloads at the start of the next frame, not while panels are using the elements
 }
 
 bool Editor::CommitDecls(const SourceEdit::Decls& decls, const std::string& label)
@@ -1720,11 +1720,12 @@ void Editor::DrawProperties()
 	// id / class (written into the tag)
 	if (has_src)
 	{
-		static std::string id_edit, class_edit;
-		static Rml::Element* edit_for = nullptr;
-		if (edit_for != e)
+		static std::string id_edit, class_edit, edit_for;
+		const std::string edit_key = sel_doc + "|" + e->GetAttribute<Rml::String>("viewer-src", "") + "|" + e->GetAttribute<Rml::String>("id", "") + "|" +
+			e->GetAttribute<Rml::String>("class", "");
+		if (edit_for != edit_key)
 		{
-			edit_for = e;
+			edit_for = edit_key;
 			id_edit = e->GetAttribute<Rml::String>("id", "");
 			class_edit = e->GetAttribute<Rml::String>("class", "");
 		}
@@ -1735,13 +1736,13 @@ void Editor::DrawProperties()
 				SetElementAttribute(e, "id", id_edit, id_edit.empty());
 			else
 				Rml::Log::Message(Rml::Log::LT_WARNING, "An id can only use letters, numbers, - and _ (and not start with a number).");
-			edit_for = nullptr;
+			edit_for.clear();
 		}
 		ImGui::SetNextItemWidth(-60 * ui_scale);
 		if (ImGui::InputText("class", &class_edit, ImGuiInputTextFlags_EnterReturnsTrue))
 		{
 			SetElementAttribute(e, "class", class_edit, class_edit.empty());
-			edit_for = nullptr;
+			edit_for.clear();
 		}
 		ImGui::SetItemTooltip("Press Enter to save");
 	}
@@ -2049,7 +2050,7 @@ void Editor::SaveTab(CodeTab& t)
 	t.applied = true;
 	GameFiles::ClearOverlay(t.real);
 	Rml::Log::Message(Rml::Log::LT_INFO, "Saved %s", FileName(t.ui).c_str());
-	viewer->ReloadAll();
+	viewer->RequestReload(); // reloads at the start of the next frame, not while panels are using the elements
 }
 
 void Editor::SaveAllTabs()

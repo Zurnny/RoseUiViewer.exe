@@ -30,7 +30,8 @@ int main(int argc, char** argv)
 	float drag[4] = {-1, -1, -1, -1};
 	int w = 1600, h = 900, frames = 20, frame_ms = 0;
 	bool use_editor = false, center = false;
-	std::string switch_to, lua_code;
+	std::string switch_to, lua_code, type_text;
+	float type_x = -1, type_y = -1;
 	float stack_x = -1, stack_y = -1, rclick_x = -1, rclick_y = -1;
 	float mouse_x = -1, mouse_y = -1;
 	std::vector<std::string> open;
@@ -99,6 +100,13 @@ int main(int argc, char** argv)
 			switch_to = next();
 		else if (a == "--lua")
 			lua_code = next();
+		else if (a == "--type")
+		{
+			char buf[256] = {};
+			sscanf(next().c_str(), "%f,%f,%255[^\n]", &type_x, &type_y, buf);
+			type_text = buf;
+			use_editor = true;
+		}
 		else if (a == "--center")
 			center = true;
 		else if (a == "--panel")
@@ -286,6 +294,32 @@ int main(int argc, char** argv)
 					ctx->ProcessMouseButtonDown(0, 0);
 					ctx->ProcessMouseButtonUp(0, 0);
 				}
+			// Click a text field in the editor, type, press Enter (frames 6..12)
+			if (type_x >= 0)
+			{
+				ImGuiIO& io = ImGui::GetIO();
+				if (f == 5)
+					io.AddMousePosEvent(type_x, type_y);
+				else if (f == 6)
+					io.AddMouseButtonEvent(0, true);
+				else if (f == 7)
+					io.AddMouseButtonEvent(0, false);
+				else if (f == 8)
+				{
+					io.AddKeyEvent(ImGuiMod_Ctrl, true);
+					io.AddKeyEvent(ImGuiKey_A, true);
+				}
+				else if (f == 9)
+				{
+					io.AddKeyEvent(ImGuiKey_A, false);
+					io.AddKeyEvent(ImGuiMod_Ctrl, false);
+					io.AddInputCharactersUTF8(type_text.c_str());
+				}
+				else if (f == 10)
+					io.AddKeyEvent(ImGuiKey_Enter, true);
+				else if (f == 11)
+					io.AddKeyEvent(ImGuiKey_Enter, false);
+			}
 			if (f == 8 && !lua_code.empty())
 				Rml::Lua::Interpreter::DoString(lua_code, "test");
 			if (f == 5)

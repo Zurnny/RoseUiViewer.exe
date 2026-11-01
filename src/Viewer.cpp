@@ -382,14 +382,14 @@ void Viewer::OpenDocument(const std::string& ui_path)
 		return;
 	}
 	open_docs.push_back(ui_path);
-	ReloadAll();
+	reload_requested = true; // loaded at the start of the next frame
 }
 
 void Viewer::CloseDocument(const std::string& ui_path)
 {
 	RememberPositions();
 	open_docs.erase(std::remove(open_docs.begin(), open_docs.end(), ui_path), open_docs.end());
-	ReloadAll();
+	reload_requested = true;
 }
 
 Rml::ElementDocument* Viewer::LoadedDocument(const std::string& ui_path) const
