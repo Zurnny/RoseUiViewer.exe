@@ -16,6 +16,10 @@ on:
         description: "Version to stamp (e.g. 1.10) when rebuilding an old one"
         required: false
         default: ""
+      lookup:
+        description: "Crash offsets to name, e.g. 0x1F1FF0 0x12AB0 (RoseUiViewer.exe+offset from crash.txt)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -71,6 +75,28 @@ jobs:
           if ($map) { Copy-Item $map.FullName RoseUiViewer.map }
           $hash = (Get-FileHash RoseUiViewer.exe -Algorithm SHA256).Hash.ToLower()
           Set-Content -Path RoseUiViewer.exe.sha256 -Value "$hash  RoseUiViewer.exe" -NoNewline -Encoding ascii
+
+      # Names the functions at the given crash offsets, using the map file.
+      - name: Crash lookup
+        if: inputs.lookup != ''
+        shell: pwsh
+        run: |
+          $lines = Get-Content RoseUiViewer.map
+          $syms = foreach ($l in $lines) {
+            if ($l -match '^\s*[0-9a-fA-F]{4}:[0-9a-fA-F]{8}\s+(\S+)\s+([0-9a-fA-F]{16})\s+(.*)$') {
+              [pscustomobject]@{ Name = $matches[1]; Va = [Convert]::ToUInt64($matches[2], 16); Obj = $matches[3].Trim() }
+            }
+          }
+          $syms = $syms | Sort-Object Va
+          $base = [Convert]::ToUInt64("140000000", 16)
+          foreach ($off in "${{ inputs.lookup }}".Split(" ", [StringSplitOptions]::RemoveEmptyEntries)) {
+            $va = $base + [Convert]::ToUInt64($off.Replace("0x",""), 16)
+            $hit = $syms | Where-Object { $_.Va -le $va } | Select-Object -Last 1
+            $undec = $hit.Name
+            try { $undec = (& undname $hit.Name 2>$null | Select-String 'is :- "(.*)"').Matches[0].Groups[1].Value } catch {}
+            $msg = "$off = $undec +0x{0:X}  ({1})" -f ($va - $hit.Va), $hit.Obj
+            Write-Output "::warning title=crash lookup::$msg"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
