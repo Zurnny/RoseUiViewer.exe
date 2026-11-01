@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include <memory>
 #include <set>
 
 extern const unsigned char g_font_regular[];
@@ -93,6 +94,7 @@ bool Viewer::Init(const fs::path& app_dir_in, Rml::RenderInterface* renderer, Rm
 		return false;
 	Rml::Lua::Initialise();
 	InstallGameScripting();
+	SnapshotLuaGlobals();
 	SetCommandHandler([this](Rml::Element* el, const std::string& name, const std::string& value) {
 		// The model the element is in first, then any model with that variable.
 		std::vector<std::string> models;
@@ -223,12 +225,30 @@ void Viewer::SaveConfig()
 	GameFiles::WriteAll(app_dir / "viewer_settings.json", j.dump(2));
 }
 
+// Font data the viewer keeps for as long as it runs. RmlUi frees a font file's data early when a file holds
+// several weights and one of them is already loaded, then reads the freed data for the next weight, which
+// crashed the viewer when switching to another game folder with the same fonts. Fonts are therefore read
+// here, kept, and each distinct file is loaded once.
+static std::vector<std::unique_ptr<std::string>> g_font_data;
+static std::set<std::string> g_font_keys;
+
+static std::string FontKey(const std::string& bytes)
+{
+	uint64_t h = 1469598103934665603ull;
+	for (unsigned char c : bytes)
+	{
+		h ^= c;
+		h *= 1099511628211ull;
+	}
+	return std::to_string(bytes.size()) + ":" + std::to_string(h);
+}
+
 void Viewer::LoadFonts()
 {
 	// The game registers its fonts in C++; here every .ttf/.otf under Data/ is loaded instead.
 	fs::path data = GameFiles::Resolve("Data");
 	std::error_code ec;
-	int count = 0;
+	int count = 0, skipped = 0;
 	for (fs::recursive_directory_iterator it(data, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec))
 	{
 		if (it.depth() > 5)
@@ -239,19 +259,25 @@ void Viewer::LoadFonts()
 		if (!it->is_regular_file(ec))
 			continue;
 		const std::string ext = GameFiles::Lower(it->path().extension().u8string());
-		if (ext == ".ttf" || ext == ".otf")
+		if (ext != ".ttf" && ext != ".otf")
+			continue;
+		auto bytes = std::make_unique<std::string>();
+		if (!GameFiles::ReadAll(it->path(), *bytes) || bytes->size() < 12)
+			continue;
+		if (!g_font_keys.insert(FontKey(*bytes)).second)
 		{
-			try
-			{
-				if (Rml::LoadFontFace(it->path().u8string(), count == 0))
-					count++;
-			} catch (const std::exception& e)
-			{
-				Rml::Log::Message(Rml::Log::LT_WARNING, "Skipped a font that couldn't be read: %s", e.what());
-			}
+			skipped++; // the same font is already loaded (e.g. from the previous game folder)
+			continue;
 		}
+		const Rml::Span<const Rml::byte> span((const Rml::byte*)bytes->data(), bytes->size());
+		g_font_data.push_back(std::move(bytes)); // kept for good: RmlUi reads it while drawing text
+		if (Rml::LoadFontFace(span, "", Rml::Style::FontStyle::Normal, Rml::Style::FontWeight::Auto, count == 0))
+			count++;
+		else
+			Rml::Log::Message(Rml::Log::LT_WARNING, "Couldn't load the font %s", it->path().u8string().c_str());
 	}
-	Rml::Log::Message(Rml::Log::LT_INFO, "Loaded %d font files from the game folder", count);
+	Rml::Log::Message(Rml::Log::LT_INFO, "Loaded %d font files from the game folder%s", count,
+		skipped ? (" (" + std::to_string(skipped) + " already loaded)").c_str() : "");
 }
 
 bool Viewer::HasGameFolder() const { return GameFiles::LooksLikeGameFolder(GameFiles::Root()); }
@@ -495,6 +521,7 @@ void Viewer::ReloadAll()
 			doc->Close();
 	loaded.clear();
 	context->Update(); // let the closed documents go before their data models are removed
+	ResetLuaGlobals();
 
 	Rml::Factory::ClearStyleSheetCache();
 	Rml::Factory::ClearTemplateCache();

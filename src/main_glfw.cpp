@@ -113,15 +113,45 @@ static void WriteCrash(const std::string& what)
 }
 
 #ifdef _WIN32
+static std::string Where(DWORD64 addr)
+{
+	HMODULE mod = nullptr;
+	wchar_t name[MAX_PATH] = L"?";
+	if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)addr, &mod) && mod)
+		GetModuleFileNameW(mod, name, MAX_PATH);
+	std::wstring w = name;
+	size_t slash = w.find_last_of(L"\\/");
+	if (slash != std::wstring::npos)
+		w = w.substr(slash + 1);
+	char buf[300];
+	snprintf(buf, sizeof(buf), "%ls+0x%llX", w.c_str(), (unsigned long long)(addr - (DWORD64)mod));
+	return buf;
+}
+
 static LONG WINAPI OnCrash(EXCEPTION_POINTERS* info)
 {
-	char buf[256];
-	HMODULE mod = nullptr;
-	void* addr = info->ExceptionRecord->ExceptionAddress;
-	GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)addr, &mod);
-	snprintf(buf, sizeof(buf), "error 0x%08lX at offset 0x%llX", (unsigned long)info->ExceptionRecord->ExceptionCode,
-		(unsigned long long)((char*)addr - (char*)mod));
-	WriteCrash(buf);
+	char head[96];
+	snprintf(head, sizeof(head), "error 0x%08lX at ", (unsigned long)info->ExceptionRecord->ExceptionCode);
+	std::string text = head + Where((DWORD64)info->ExceptionRecord->ExceptionAddress);
+	// The steps that led there (module+offset; RoseUiViewer.map from the release turns these into names).
+	CONTEXT ctx = *info->ContextRecord;
+	text += "\n  steps:";
+	for (int i = 0; i < 24 && ctx.Rip; i++)
+	{
+		text += "\n    " + Where(ctx.Rip);
+		DWORD64 base = 0;
+		PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(ctx.Rip, &base, nullptr);
+		if (!fn)
+		{
+			ctx.Rip = *(DWORD64*)ctx.Rsp;
+			ctx.Rsp += 8;
+			continue;
+		}
+		void* handler_data = nullptr;
+		DWORD64 frame = 0;
+		RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fn, &ctx, &handler_data, &frame, nullptr);
+	}
+	WriteCrash(text);
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif
@@ -158,7 +188,8 @@ static void ReportLastCrash(const fs::path& app_dir)
 		return;
 	while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
 		text.pop_back();
-	Rml::Log::Message(Rml::Log::LT_ERROR, "Last time: %s. Please send this line along with what you were doing.", text.c_str());
+	const std::string first = text.substr(0, text.find('\n'));
+	Rml::Log::Message(Rml::Log::LT_ERROR, "Last time: %s. The details are in crash-last.txt next to the viewer; please send that file.", first.c_str());
 	std::error_code ec;
 	fs::rename(app_dir / "crash.txt", app_dir / "crash-last.txt", ec);
 }

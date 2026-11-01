@@ -163,3 +163,68 @@ void SetCommandHandler(std::function<bool(Rml::Element*, const std::string&, con
 {
 	g_command_handler = std::move(handler);
 }
+
+static int g_baseline_ref = LUA_NOREF;
+
+void SnapshotLuaGlobals()
+{
+	lua_State* L = Rml::Lua::Interpreter::GetLuaState();
+	if (!L)
+		return;
+	lua_newtable(L); // baseline copy
+	lua_pushglobaltable(L);
+	lua_pushnil(L);
+	while (lua_next(L, -2))
+	{
+		lua_pushvalue(L, -2); // key
+		lua_insert(L, -2);    // key, key, value
+		lua_settable(L, -5);  // baseline[key] = value
+	}
+	lua_pop(L, 1); // global table
+	g_baseline_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+}
+
+void ResetLuaGlobals()
+{
+	lua_State* L = Rml::Lua::Interpreter::GetLuaState();
+	if (!L || g_baseline_ref == LUA_NOREF)
+		return;
+	const int top = lua_gettop(L);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, g_baseline_ref); // baseline
+	lua_pushglobaltable(L);                            // baseline, G
+	// Keys that weren't there at start-up
+	std::vector<int> refs;
+	lua_newtable(L); // baseline, G, remove-list
+	int n = 0;
+	lua_pushnil(L);
+	while (lua_next(L, -3))
+	{
+		lua_pop(L, 1); // value
+		lua_pushvalue(L, -1);
+		lua_rawget(L, -5); // baseline[key]
+		const bool known = !lua_isnil(L, -1);
+		lua_pop(L, 1);
+		if (!known)
+		{
+			lua_pushvalue(L, -1);
+			lua_rawseti(L, -3, ++n);
+		}
+	}
+	for (int i = 1; i <= n; i++)
+	{
+		lua_rawgeti(L, -1, i); // key
+		lua_pushnil(L);
+		lua_rawset(L, -4); // G[key] = nil
+	}
+	lua_pop(L, 1); // remove-list
+	// Put back anything a script replaced
+	lua_pushnil(L);
+	while (lua_next(L, -3))
+	{
+		lua_pushvalue(L, -2);
+		lua_insert(L, -2);
+		lua_rawset(L, -4); // G[key] = baseline value
+	}
+	lua_settop(L, top);
+	lua_gc(L, LUA_GCCOLLECT, 0);
+}

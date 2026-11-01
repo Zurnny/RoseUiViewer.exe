@@ -4,6 +4,7 @@
 //              [--open Data/ui/themes/rose/game/hud.html]... [--at x,y]...
 //              [--select x,y] [--style name=value]... [--code <ui path>] [--mouse x,y]
 #include "Editor.h"
+#include <RmlUi/Lua/Interpreter.h>
 #include <RmlUi/Core/Context.h>
 #include "Viewer.h"
 #include "ViewerRenderer.h"
@@ -29,7 +30,7 @@ int main(int argc, char** argv)
 	float drag[4] = {-1, -1, -1, -1};
 	int w = 1600, h = 900, frames = 20, frame_ms = 0;
 	bool use_editor = false, center = false;
-	std::string switch_to;
+	std::string switch_to, lua_code;
 	float stack_x = -1, stack_y = -1, rclick_x = -1, rclick_y = -1;
 	float mouse_x = -1, mouse_y = -1;
 	std::vector<std::string> open;
@@ -96,6 +97,8 @@ int main(int argc, char** argv)
 		}
 		else if (a == "--switch")
 			switch_to = next();
+		else if (a == "--lua")
+			lua_code = next();
 		else if (a == "--center")
 			center = true;
 		else if (a == "--panel")
@@ -283,6 +286,8 @@ int main(int argc, char** argv)
 					ctx->ProcessMouseButtonDown(0, 0);
 					ctx->ProcessMouseButtonUp(0, 0);
 				}
+			if (f == 8 && !lua_code.empty())
+				Rml::Lua::Interpreter::DoString(lua_code, "test");
 			if (f == 5)
 				for (auto& [k, v] : styles)
 					fprintf(stderr, "style %s=%s -> %s\n", k.c_str(), v.c_str(), editor.CommitStyle(k, v) ? "saved" : "not saved");

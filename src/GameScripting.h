@@ -21,3 +21,8 @@ namespace Rml {
 class Element;
 }
 void SetCommandHandler(std::function<bool(Rml::Element* element, const std::string& name, const std::string& value)> handler);
+
+// Lua globals the scripts set (SP_THEME, SP_ADDON_HOOK, functions that hold on to their window...) are
+// cleared on every reload, like a fresh start of the game, so nothing points at a window that's gone.
+void SnapshotLuaGlobals(); // call once after start-up: what's there now is kept
+void ResetLuaGlobals();    // call after the windows have been closed
