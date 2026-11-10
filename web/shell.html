@@ -105,9 +105,10 @@ var rose = {
   appDirty: false,
 
   async init() {
+    // Only the folder's name is read now; the folder itself is fetched from storage when Reopen is
+    // clicked (some browser builds crash reading stored folder access back, so it never happens on load).
     if (this.canSaveInPlace) {
-      const h = await kv.get('gameFolder');
-      if (h) { this.savedHandle = h; this.savedName = h.name; }
+      try { this.savedName = localStorage.getItem('rose-folder-name') || ''; } catch {}
     }
     document.getElementById('folderInput').addEventListener('change', e => this.loadFromFileList(e.target.files));
     // Keep the browser's own shortcuts from taking over the viewer's (reload page, save page...).
@@ -138,13 +139,18 @@ var rose = {
   },
 
   async reopen() {
-    const h = this.savedHandle;
-    if (!h) return this.pickFolder();
+    const h = this.savedHandle || await kv.get('gameFolder');
+    if (!h) { this.forget(); return this.pickFolder(); }
     try {
       const p = await h.requestPermission({ mode: 'readwrite' });
       if (p !== 'granted') { ui.error('Permission needed', 'Allow access to ' + h.name + ' to use it again, or choose the folder.'); return; }
       await this.useDirectory(h);
     } catch (e) { ui.error("Couldn't reopen " + h.name, e.message + ' — choose the folder again.'); }
+  },
+
+  forget() {
+    this.savedHandle = null; this.savedName = '';
+    try { localStorage.removeItem('rose-folder-name'); } catch {}
   },
 
   async findChild(dirHandle, name, kind) {
@@ -181,6 +187,7 @@ var rose = {
       this.dataDir = dataDir;
       this.savedHandle = d; this.savedName = d.name;
       await kv.set('gameFolder', d);
+      try { localStorage.setItem('rose-folder-name', d.name); } catch {}
       Module.ccall('RoseWeb_FolderLoaded', null, [], []);
       ui.hide();
     } catch (e) { ui.error("Couldn't read the folder", e.message); }
