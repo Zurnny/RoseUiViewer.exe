@@ -174,15 +174,18 @@ var rose = {
       ui.show('Opening ' + d.name + '…', 'Finding the interface files and fonts.', 0);
       const found = [];
       await this.walk(dataDir, 'Data/', found, 0);
-      this.resetGame();
-      this.tracked.clear();
+      // Copied into a holding folder and switched in at the end, so the viewer never sees half a folder.
+      this.clearDir('/game-new');
+      const tracked = new Map();
       let i = 0;
       for (const f of found) {
         const file = await f.handle.getFile();
-        this.put(f.path, new Uint8Array(await file.arrayBuffer()));
-        this.tracked.set(f.path, { handle: f.handle, lastModified: file.lastModified, size: file.size });
+        this.put(f.path, new Uint8Array(await file.arrayBuffer()), '/game-new/');
+        tracked.set(f.path, { handle: f.handle, lastModified: file.lastModified, size: file.size });
         if (++i % 20 === 0) ui.show('Opening ' + d.name + '…', i + ' of ' + found.length + ' files', i / found.length);
       }
+      this.swapIn();
+      this.tracked = tracked;
       this.dir = d;
       this.dataDir = dataDir;
       this.savedHandle = d; this.savedName = d.name;
@@ -221,19 +224,21 @@ var rose = {
     this.busy = true;
     try {
       const wanted = files.filter(f => { const r = lower(prefix + rel(f)); return r.startsWith('data/ui/') || (r.startsWith('data/') && isFont(r)); });
-      this.resetGame();
+      this.clearDir('/game-new');
       let i = 0;
       for (const f of wanted) {
-        this.put(prefix + rel(f), new Uint8Array(await f.arrayBuffer()));
+        this.put(prefix + rel(f), new Uint8Array(await f.arrayBuffer()), '/game-new/');
         if (++i % 20 === 0) ui.show('Opening ' + files[0].webkitRelativePath.split('/')[0] + '…', i + ' of ' + wanted.length + ' files', i / wanted.length);
       }
+      this.swapIn();
+      this.dir = null;
       Module.ccall('RoseWeb_FolderLoaded', null, [], []);
       ui.hide();
     } catch (e) { ui.error("Couldn't read the folder", e.message); }
     finally { this.busy = false; document.getElementById('folderInput').value = ''; }
   },
 
-  resetGame() {
+  clearDir(dir) {
     const rm = p => {
       for (const n of FS.readdir(p)) {
         if (n === '.' || n === '..') continue;
@@ -241,12 +246,18 @@ var rose = {
         if (FS.isDir(FS.stat(q).mode)) { rm(q); FS.rmdir(q); } else FS.unlink(q);
       }
     };
-    try { rm('/game'); } catch {}
-    try { FS.mkdir('/game'); } catch {}
+    try { rm(dir); FS.rmdir(dir); } catch {}
+    FS.mkdir(dir);
   },
 
-  put(path, bytes) {
-    const full = '/game/' + path;
+  swapIn() {
+    this.clearDir('/game');
+    FS.rmdir('/game');
+    FS.rename('/game-new', '/game');
+  },
+
+  put(path, bytes, root) {
+    const full = (root || '/game/') + path;
     FS.mkdirTree(full.substring(0, full.lastIndexOf('/')));
     FS.writeFile(full, bytes);
   },
