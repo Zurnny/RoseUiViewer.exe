@@ -490,10 +490,22 @@ void Editor::DrawToolbar()
 
 	if (!viewer->HasGameFolder())
 	{
-		if (ImGui::Button("Choose your ROSE Online folder"))
+		const PlatformHooks& hk = viewer->Hooks();
+		const std::string saved = hk.saved_folder_name ? hk.saved_folder_name() : std::string();
+		if (!saved.empty())
+		{
+			if (ImGui::Button(("Reopen " + saved).c_str()))
+				hk.reopen_folder();
+			ImGui::SetItemTooltip("The folder you used last time (your browser asks to allow it again)");
+			ImGui::SameLine();
+		}
+		if (ImGui::Button(saved.empty() ? "Choose your ROSE Online folder" : "Choose another folder"))
 			viewer->PickGameFolder();
 		ImGui::SameLine();
-		ImGui::TextColored(kDim, "the one that has Data in it (you can also drop it on this window)");
+		if (hk.is_web)
+			ImGui::TextColored(kDim, "the one that has Data in it. Your files stay on your computer; nothing is uploaded.");
+		else
+			ImGui::TextColored(kDim, "the one that has Data in it (you can also drop it on this window)");
 	}
 	else
 	{
@@ -624,6 +636,13 @@ void Editor::DrawToolbar()
 			ImGui::SetItemTooltip("Close %s", FileName(ui).c_str());
 			ImGui::PopID();
 		}
+	}
+
+	if (viewer->Hooks().is_web && !viewer->Hooks().can_save_in_place && viewer->HasGameFolder())
+	{
+		ImGui::SameLine();
+		ImGui::TextColored(kWarn, "Saves download as files");
+		ImGui::SetItemTooltip("This browser can't save into your folder, so each saved file downloads instead:\ncopy it into your game folder. Chrome and Edge save straight into the folder.");
 	}
 
 	// Update status

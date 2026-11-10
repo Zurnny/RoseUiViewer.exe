@@ -3,6 +3,7 @@
 // relative paths) onto the ROSE Online folder on disk.
 #include <RmlUi/Core/FileInterface.h>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,8 @@ std::string ToUiPath(const fs::path& real);
 
 bool ReadAll(const fs::path& file, std::string& out);
 bool WriteAll(const fs::path& file, const std::string& data);
+// Called after every successful WriteAll (the web version copies the file back to the user's folder).
+void SetWriteHook(std::function<void(const fs::path&)> hook);
 
 // True when 'folder' looks like a ROSE Online install (has Data/ui/themes).
 bool LooksLikeGameFolder(const fs::path& folder);

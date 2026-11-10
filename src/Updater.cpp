@@ -282,6 +282,10 @@ void Updater::Start(const fs::path& exe_in, const std::string& version_in, bool 
 	}
 	if (check_now)
 		CheckNow();
+#elif defined(__EMSCRIPTEN__)
+	(void)check_now;
+	state = State::Unsupported;
+	message = "The web version is always the newest: reload the page to get updates.";
 #else
 	(void)check_now;
 	state = State::Unsupported;

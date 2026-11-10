@@ -23,6 +23,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   windows:
@@ -124,3 +126,52 @@ jobs:
             RoseUiViewer.exe
             RoseUiViewer.exe.sha256
             RoseUiViewer.map
+
+  # The web version: built with Emscripten and published to GitHub Pages (zurnny.github.io/RoseUiViewer.exe).
+  web:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version != '' && inputs.version || format('1.{0}', github.run_number) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.10
+
+      - name: Build
+        run: |
+          set -o pipefail
+          emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release -DROSEVIEW_VERSION="$VERSION" 2>&1 | tee configure.log
+          cmake --build build-web --parallel 2>&1 | tee build.log
+
+      - name: Report errors
+        if: failure()
+        run: |
+          for f in configure.log build.log; do
+            [ -f "$f" ] || continue
+            grep -iE "error|CMake Error|fatal" "$f" | head -25 | while IFS= read -r l; do echo "::error title=web $f::$l"; done
+            tail -8 "$f" | while IFS= read -r l; do echo "::warning title=web $f (end)::$l"; done
+          done
+
+      - name: Site
+        run: |
+          mkdir -p site
+          cp build-web/index.html build-web/index.js build-web/index.wasm site/
+          touch site/.nojekyll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RoseUiViewer-web
+          path: site
+
+      - name: Publish to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site
+          force_orphan: true
+          commit_message: "Web version ${{ env.VERSION }}"

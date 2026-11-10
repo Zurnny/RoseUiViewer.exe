@@ -137,15 +137,25 @@ bool ReadAll(const fs::path& file, std::string& out)
 	return true;
 }
 
+static std::function<void(const fs::path&)> g_write_hook;
+
+void SetWriteHook(std::function<void(const fs::path&)> hook) { g_write_hook = std::move(hook); }
+
 bool WriteAll(const fs::path& file, const std::string& data)
 {
 	std::error_code ec;
 	fs::create_directories(file.parent_path(), ec);
-	std::ofstream f(file, std::ios::binary | std::ios::trunc);
-	if (!f)
-		return false;
-	f << data;
-	return (bool)f;
+	{
+		std::ofstream f(file, std::ios::binary | std::ios::trunc);
+		if (!f)
+			return false;
+		f << data;
+		if (!f)
+			return false;
+	}
+	if (g_write_hook)
+		g_write_hook(file);
+	return true;
 }
 
 bool LooksLikeGameFolder(const fs::path& folder)

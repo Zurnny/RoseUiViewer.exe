@@ -306,10 +306,8 @@ bool Viewer::SetGameFolder(const fs::path& folder)
 		std::error_code ec;
 		fs::current_path(folder, ec);
 		if (changed)
-		{
-			LoadFonts();
 			open_docs.clear();
-		}
+		LoadFonts(); // each distinct font file is only loaded once, so this is cheap when nothing is new
 		doc_list_dirty = true;
 		SaveConfig();
 		ReloadAll();
@@ -545,6 +543,11 @@ void Viewer::ReloadAll()
 	std::vector<std::string> keep;
 	for (const auto& ui : open_docs)
 	{
+		if (!HasGameFolder())
+		{
+			keep.push_back(ui); // reopened once the folder is back (the web version opens it after start-up)
+			continue;
+		}
 		std::string text;
 		fs::path real = GameFiles::Resolve(ui);
 		if (!GameFiles::ReadCurrent(real, text))
@@ -610,6 +613,8 @@ void Viewer::ReloadAll()
 	int cascade = 0;
 	for (const auto& ui : open_docs)
 	{
+		if (!HasGameFolder())
+			break;
 		Rml::ElementDocument* doc = context->LoadDocument(ui);
 		if (!doc)
 		{

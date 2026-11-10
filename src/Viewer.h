@@ -25,6 +25,12 @@ struct PlatformHooks {
 	std::function<fs::path()> pick_folder;                 // ask the user for the ROSE Online folder
 	std::function<void(const fs::path&)> open_in_explorer; // show a folder or file in Explorer
 	std::function<void(const std::string&)> set_title;
+	// Web version: a folder from a previous visit that can be reopened with one click, and whether
+	// edits can be saved straight into the user's folder (Chrome/Edge) or are downloaded instead.
+	std::function<std::string()> saved_folder_name;
+	std::function<void()> reopen_folder;
+	bool can_save_in_place = true;
+	bool is_web = false;
 };
 
 struct LogEntry {
@@ -88,6 +94,8 @@ public:
 	bool HasGameFolder() const;
 	bool SetGameFolder(const fs::path& folder);
 	void PickGameFolder();
+	void RequestGameFolder(const fs::path& folder) { pending_folder = folder; } // switched at the start of the next frame
+	void LoadFonts();
 
 	// Windows
 	const std::vector<std::string>& ListGameDocuments(); // every window file in the theme (cached)
@@ -127,7 +135,6 @@ public:
 
 private:
 	void LoadConfig();
-	void LoadFonts();
 	void ApplyBackground();
 	void RememberPositions();
 	uint64_t Fingerprint() const;

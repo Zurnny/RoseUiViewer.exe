@@ -16,6 +16,14 @@ option(ROSEVIEW_HEADLESS "Build the headless screenshot tool (EGL, Linux only)" 
 set(ROSEVIEW_EGL_INCLUDE "" CACHE PATH "Folder holding EGL/ and KHR/ headers (headless build)")
 set(ROSEVIEW_VERSION "dev" CACHE STRING "Version stamped into the build (the GitHub builds set 1.<build number>)")
 
+# Web version (Emscripten): C++ exceptions and Lua's error handling use WebAssembly's own mechanism.
+if(EMSCRIPTEN)
+	set(ROSEVIEW_APP OFF CACHE BOOL "" FORCE)
+	set(ROSEVIEW_HEADLESS OFF CACHE BOOL "" FORCE)
+	add_compile_options(-fwasm-exceptions -sSUPPORT_LONGJMP=wasm)
+	add_link_options(-fwasm-exceptions -sSUPPORT_LONGJMP=wasm)
+endif()
+
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 
@@ -100,6 +108,9 @@ add_library(imgui_core STATIC
 	third_party/TextEditor/TextEditor.cpp
 )
 target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends third_party/TextEditor)
+if(EMSCRIPTEN)
+	target_compile_definitions(imgui_core PUBLIC IMGUI_IMPL_OPENGL_ES3) # WebGL 2
+endif()
 
 # ---------------------------------------------------------------- viewer core
 add_library(viewer_core STATIC
@@ -159,4 +170,22 @@ if(ROSEVIEW_HEADLESS)
 	target_include_directories(RoseUiShot PRIVATE ${ROSEVIEW_EGL_INCLUDE})
 	find_library(EGL_LIB NAMES EGL libEGL.so.1 PATHS /usr/lib/x86_64-linux-gnu)
 	target_link_libraries(RoseUiShot PRIVATE viewer_core ${EGL_LIB})
+endif()
+
+# ---------------------------------------------------------------- web version (index.html + .js + .wasm)
+if(EMSCRIPTEN)
+	add_executable(RoseUiViewerWeb src/main_web.cpp ${RMLUI_BACKENDS}/RmlUi_Platform_GLFW.cpp ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp)
+	set_target_properties(RoseUiViewerWeb PROPERTIES OUTPUT_NAME index SUFFIX .html)
+	target_compile_definitions(RoseUiViewerWeb PRIVATE GLFW_INCLUDE_NONE)
+	target_compile_options(RoseUiViewerWeb PRIVATE --use-port=contrib.glfw3)
+	target_link_libraries(RoseUiViewerWeb PRIVATE viewer_core)
+	target_link_options(RoseUiViewerWeb PRIVATE
+		--use-port=contrib.glfw3
+		-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+		-sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=4194304
+		-sFORCE_FILESYSTEM=1 -lidbfs.js
+		"-sEXPORTED_FUNCTIONS=['_main','_RoseWeb_FolderLoaded','_malloc','_free']"
+		"-sEXPORTED_RUNTIME_METHODS=['ccall','FS','IDBFS','addRunDependency','removeRunDependency','stringToNewUTF8','UTF8ToString']"
+		--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html)
+	set_property(TARGET RoseUiViewerWeb APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/web/shell.html)
 endif()
