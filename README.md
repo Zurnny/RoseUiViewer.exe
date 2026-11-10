@@ -4,7 +4,15 @@ Preview **and edit** ROSE Online's interface files (the RmlUi `.html` / `.css` u
 
 It uses the same UI library the game does (RmlUi, with Lua), so layout, sprites, decorators, templates and your `<script>` code behave like they do in-game.
 
-## Getting started
+## Web version
+
+The same viewer and editor run in the browser at **https://zurnny.github.io/RoseUiViewer.exe/** — nothing to install, and your files are never uploaded: the page reads the folder you open on your own computer.
+
+- **Chrome or Edge:** click **Choose your ROSE Online folder** and allow access. Edits save straight into the folder, and changes you make in other editors show up by themselves. Next time, **Reopen** brings the same folder back (your browser asks to allow it again).
+- **Firefox or Safari:** opening a folder works the same, but those browsers don't let a page write to it, so each saved file downloads instead — copy it into your game folder.
+- Settings, panel layout and sample data are kept in the browser. The web version is always the newest: reload the page to update.
+
+## Getting started (Windows app)
 
 1. Unzip anywhere you can write to (Desktop, Documents — not Program Files). Settings, panel layout and sample data are kept next to the .exe.
 2. Run `RoseUiViewer.exe`.
@@ -86,6 +94,6 @@ In-game, the client's C++ code supplies the values your windows show (name, HP, 
 
 ## Building from source
 
-Windows builds are made by GitHub Actions (`.github/workflows/build.yml`): every push to `main` builds the viewer and publishes it as release `v1.<build number>` (the zip, plus `RoseUiViewer.exe` and its `.sha256` for the updater). Installed copies pick it up automatically.
+Builds are made by GitHub Actions (`.github/workflows/build.yml`): every push to `main` builds the Windows viewer and publishes it as release `v1.<build number>` (the zip, plus `RoseUiViewer.exe` and its `.sha256` for the updater; installed copies pick it up automatically), and builds the web version with Emscripten into the `gh-pages` branch, which GitHub Pages serves.
 
 Locally: `cmake -S . -B build && cmake --build build --config Release` with Visual Studio 2022 and CMake 3.20+. Local builds are stamped `dev` and don't update themselves. Dependencies (RmlUi, Lua 5.4, FreeType, GLFW, Dear ImGui, nlohmann/json, stb) are downloaded automatically.
