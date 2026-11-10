@@ -1,6 +1,7 @@
 #include "Viewer.h"
 #include "CustomElements.h"
 #include "GameScripting.h"
+#include "ImageDecode.h"
 #include "MarkupScan.h"
 #include <RmlUi/Core.h>
 #include <RmlUi/Debugger.h>
@@ -264,6 +265,13 @@ void Viewer::LoadFonts()
 		auto bytes = std::make_unique<std::string>();
 		if (!GameFiles::ReadAll(it->path(), *bytes) || bytes->size() < 12)
 			continue;
+		if (IsGitLfsPointer(*bytes))
+		{
+			Rml::Log::Message(Rml::Log::LT_WARNING,
+				"Font %s is a Git LFS placeholder, not the real font. Install Git LFS and run 'git lfs pull' in that repo to get the real files.",
+				it->path().u8string().c_str());
+			continue;
+		}
 		if (!g_font_keys.insert(FontKey(*bytes)).second)
 		{
 			skipped++; // the same font is already loaded (e.g. from the previous game folder)

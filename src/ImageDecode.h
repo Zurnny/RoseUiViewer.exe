@@ -12,3 +12,7 @@ struct DecodedImage {
 bool DecodeImage(const std::string& bytes, DecodedImage& out, std::string& error);
 
 void PremultiplyAlpha(DecodedImage& img);
+
+// Git LFS stores large files in a repo as small text placeholders; a folder cloned without Git LFS
+// (or downloaded as a ZIP from GitHub) has these instead of the real images and fonts.
+bool IsGitLfsPointer(const std::string& bytes);

@@ -21,6 +21,13 @@ Rml::TextureHandle ViewerRenderer::LoadTexture(Rml::Vector2i& texture_dimensions
 			source.c_str());
 		return Blank(this, texture_dimensions);
 	}
+	if (IsGitLfsPointer(bytes))
+	{
+		Rml::Log::Message(Rml::Log::LT_WARNING,
+			"%s is a Git LFS placeholder, not the real image. Install Git LFS and run 'git lfs pull' in that repo to get the real files.",
+			source.c_str());
+		return Blank(this, texture_dimensions);
+	}
 	DecodedImage img;
 	std::string error;
 	if (!DecodeImage(bytes, img, error))

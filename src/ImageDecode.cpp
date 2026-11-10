@@ -371,3 +371,9 @@ void PremultiplyAlpha(DecodedImage& img)
 		img.rgba[i + 2] = (uint8_t)((img.rgba[i + 2] * a + 127) / 255);
 	}
 }
+
+bool IsGitLfsPointer(const std::string& bytes)
+{
+	static const char sig[] = "version https://git-lfs.github.com/spec/";
+	return bytes.size() < 1024 && bytes.compare(0, sizeof(sig) - 1, sig) == 0;
+}
